@@ -97,6 +97,14 @@ import {
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
+import {
+  NHIS_CATALOGUE_ONLY_LIST_NOTE,
+  getNhisCatalogueOnlyNotListedMessage,
+  isNhisCatalogueDrug,
+  isNhisCatalogueOnlyPolicy,
+  moveCartFromNhis,
+  moveCartToNhis,
+} from '../utils/nhisCatalogueOnlyTill'
 import { calculatePrivateInsuranceSettlement, reconcilePrivateInsuranceInputs } from '../utils/privateInsuranceSettlement'
 import {
   calculateNhisSplitSettlement,
@@ -246,6 +254,9 @@ const Sales = () => {
   const [isPatientSearchOpen, setIsPatientSearchOpen] = useState(false)
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('cash')
+  // NHIS-009: lines that are not on the NHIS catalogue, kept aside for a cash sale while an NHIS
+  // sale is open at a pharmacy that does not take top-ups.
+  const [heldCashItems, setHeldCashItems] = useState([])
   const [paymentProvider, setPaymentProvider] = useState('hubtel')
   const [paymentPhone, setPaymentPhone] = useState('')
   const [paymentEmail, setPaymentEmail] = useState('')
@@ -345,10 +356,19 @@ const Sales = () => {
     onlinePaymentSettings?.defaultProvider === 'paystack' ? 'paystack' : 'hubtel'
   const posAdminMode = isAdmin && searchParams.get('mode') === 'admin'
   const posLocked = !activeShift?.id
-  const visiblePosDrugs = useMemo(
-    () => posLocked ? [] : getInStockPosDrugs(drugs),
-    [drugs, posLocked]
-  )
+  // NHIS-009: a pharmacy that does not take top-ups sells only NHIS catalogue medicines under NHIS.
+  const nhisCatalogueOnly = isNhisCatalogueOnlyPolicy({
+    topUpPolicy: nhisTopUpPolicy,
+    legacyTopUpsEnabled: canUseNhisTopups,
+  })
+  const nhisCatalogueOnlyActive = nhisCatalogueOnly && paymentMethod === 'nhia'
+  const visiblePosDrugs = useMemo(() => {
+    if (posLocked) return []
+    const inStock = getInStockPosDrugs(drugs)
+    return nhisCatalogueOnlyActive
+      ? inStock.filter((drug) => isNhisCatalogueDrug(drug, getNhisCatalogPrice(drug)))
+      : inStock
+  }, [drugs, posLocked, nhisCatalogueOnlyActive])
   const selectedPatientForSale = useMemo(
     () => patients.find((patient) => patient.id === patientId) || null,
     [patients, patientId]
@@ -938,6 +958,12 @@ const Sales = () => {
     }
     // ✅ NHIS PHARMACY LEVEL PATCH END
 
+    // NHIS-009: under NHIS, a pharmacy without top-ups sells catalogue medicines only.
+    if (nhisCatalogueOnlyActive && !isNhisCatalogueDrug(drug, getNhisCatalogPrice(drug))) {
+      notify(getNhisCatalogueOnlyNotListedMessage(drug.name), 'warning')
+      return
+    }
+
     setCart((current) => {
       const existing = current.find((item) => item.id === drug.id)
       const maxQty = Number.parseFloat(drug.quantity) || 0
@@ -964,7 +990,10 @@ const Sales = () => {
           id: drug.id,
           drugId: drug.id,
           name: drug.name,
-          price: retailPrice,
+          // NHIS-009: at a pharmacy without top-ups an NHIS line is sold at the catalogue amount;
+          // the normal selling price is kept so the line goes back to it outside NHIS.
+          price: nhisCatalogueOnlyActive ? nhisPrice : retailPrice,
+          retailPrice,
           nhisPrice: nhisPrice > 0 ? nhisPrice : null,
           nhisCode: nhisPrice > 0 ? drug.nhis_code || null : null,
           // Listed in the NHIS catalogue, whether or not a usable tariff is present. Lets the
@@ -1162,11 +1191,11 @@ const Sales = () => {
       })
       if (cancelled) return
       posDraftRecoveryReadyRef.current = true
-      if (!draft?.cart?.length) return
+      if (!draft?.cart?.length && !draft?.heldCashItems?.length) return
       const resume = await confirmAction({
         title: 'Resume unfinished sale?',
         details: [
-          { label: 'Items', value: `${draft.cart.length}` },
+          { label: 'Items', value: `${(draft.cart?.length || 0) + (draft.heldCashItems?.length || 0)}` },
           { label: 'Saved', value: draft.savedAt ? new Date(draft.savedAt).toLocaleString() : 'Earlier on this device' },
         ],
         warning: 'This is a local draft only. Review stock, prices, patient and payment details before completing the sale.',
@@ -1177,10 +1206,13 @@ const Sales = () => {
         clearUnsavedDraft({ userId: user.id, organizationId: draftOrganizationId, scope: 'pos-cart' })
         return
       }
-      const validCart = draft.cart
+      const validCart = (draft.cart || [])
         .filter((item) => item?.id && Number(item.quantity) > 0 && Number(item.price) >= 0)
         .map((item) => ({ ...item, quantity: Math.max(1, Math.floor(Number(item.quantity))) }))
       setCart(validCart)
+      setHeldCashItems(Array.isArray(draft.heldCashItems)
+        ? draft.heldCashItems.filter((item) => item?.id && Number(item.quantity) > 0)
+        : [])
       setPatientId(draft.patientId || '')
       setPaymentMethod(draft.paymentMethod || 'cash')
       setPaymentProvider(draft.paymentProvider || 'hubtel')
@@ -1203,7 +1235,7 @@ const Sales = () => {
 
   useEffect(() => {
     if (!posDraftRecoveryReadyRef.current || !user?.id || !draftOrganizationId || processing || showReceipt) return
-    if (!cart.length) {
+    if (!cart.length && !heldCashItems.length) {
       clearUnsavedDraft({ userId: user.id, organizationId: draftOrganizationId, scope: 'pos-cart' })
       return
     }
@@ -1213,14 +1245,14 @@ const Sales = () => {
         organizationId: draftOrganizationId,
         scope: 'pos-cart',
         payload: {
-          savedAt: new Date().toISOString(), cart, patientId, paymentMethod, paymentProvider,
+          savedAt: new Date().toISOString(), cart, heldCashItems, patientId, paymentMethod, paymentProvider,
           paymentPhone, paymentEmail, received, discountType, discountValue, insuranceCoverage,
           patientTopUp, patientTopUpMethod, nhiaDiagnosis, nhiaDiagnosisDetails, nhiaCccNo,
         },
       })
     }, 500)
     return () => window.clearTimeout(timer)
-  }, [cart, discountType, discountValue, draftOrganizationId, insuranceCoverage, nhiaCccNo, nhiaDiagnosis, nhiaDiagnosisDetails, patientId, patientTopUp, patientTopUpMethod, paymentEmail, paymentMethod, paymentPhone, paymentProvider, processing, received, showReceipt, user?.id])
+  }, [cart, heldCashItems, discountType, discountValue, draftOrganizationId, insuranceCoverage, nhiaCccNo, nhiaDiagnosis, nhiaDiagnosisDetails, patientId, patientTopUp, patientTopUpMethod, paymentEmail, paymentMethod, paymentPhone, paymentProvider, processing, received, showReceipt, user?.id])
   const selectedNhiaMemberNumber = getNhiaMemberNumber(selectedPatientForSale)
 
   // NHIS-008: the Generate button is for claims staff, who can also load the facility CC settings.
@@ -1418,6 +1450,26 @@ const Sales = () => {
   }
 
   const handlePaymentMethodChange = (method) => {
+    // NHIS-009: switching to NHIS keeps only the NHIS catalogue lines in the cart and sets the others
+    // aside for a cash sale; leaving NHIS returns them and puts the lines back to their selling price.
+    const enteringNhisOnly = nhisCatalogueOnly && method === 'nhia' && paymentMethod !== 'nhia'
+    const leavingNhisOnly = nhisCatalogueOnly && method !== 'nhia' && paymentMethod === 'nhia'
+    if (enteringNhisOnly) {
+      const moved = moveCartToNhis(cart, heldCashItems)
+      setCart(moved.cart)
+      setHeldCashItems(moved.held)
+      if (moved.keptNames.length) {
+        notify(`Kept for a cash sale (not on the NHIS list): ${moved.keptNames.join(', ')}.`, 'info')
+      }
+    } else if (leavingNhisOnly) {
+      const moved = moveCartFromNhis(cart, heldCashItems)
+      setCart(moved.cart)
+      setHeldCashItems([])
+      if (moved.restoredNames.length) {
+        notify(`Back in the cart for a cash sale: ${moved.restoredNames.join(', ')}.`, 'info')
+      }
+    }
+
     setPaymentMethod(method)
     if (method === 'momo') {
       setPaymentProvider(preferredOnlinePaymentProvider)
@@ -1442,6 +1494,8 @@ const Sales = () => {
 
     // NHIA Claim: the NHIS tariff decides the cover. Private Insurance: the normal selling bill is the basis and the
     // insurer's agreed cover is entered by the cashier (default: the insurer covers the whole bill). No NHIS tariff.
+    // (When NHIS lines were just moved or repriced, the NHIA effect below recomputes the cover and the
+    // patient's amount from the new cart.)
     const total = calculateTotal()
     const nhisSettlement = calculateNhisSettlement()
     const coveredAmount = method === 'nhia' ? nhisSettlement.nhisCoveredAmount : total
@@ -1770,6 +1824,17 @@ const Sales = () => {
     }
   }
 
+  // NHIS-009: once the NHIS sale is finished, the lines that were kept aside for a cash sale come back
+  // into the cart and the payment method returns to cash, ready for that separate sale.
+  const returnHeldCashItemsAfterSale = () => {
+    if (!heldCashItems.length) return
+    const names = heldCashItems.map((item) => item.name)
+    setCart(heldCashItems.map((item) => ({ ...item, price: Number(item.retailPrice ?? item.price) || 0 })))
+    setHeldCashItems([])
+    setPaymentMethod('cash')
+    notify(`Back in the cart for a cash sale: ${names.join(', ')}.`, 'info')
+  }
+
   const handleCompleteSale = async ({ confirmed = false } = {}) => {
     if (!cart.length) {
       return
@@ -2094,6 +2159,7 @@ const Sales = () => {
         })
         reduceSoldDrugQuantities(soldItems)
         setCart([])
+        returnHeldCashItemsAfterSale()
         setSearchTerm('')
         syncSearchParam('')
         setReceived('')
@@ -2184,6 +2250,7 @@ const Sales = () => {
           setLastSale({ ...receiptData, offline: true, branchServer: true })
           reduceSoldDrugQuantities(soldItems)
           setCart([])
+          returnHeldCashItemsAfterSale()
           setSearchTerm('')
           syncSearchParam('')
           setReceived('')
@@ -2243,6 +2310,7 @@ const Sales = () => {
             setLastSale({ ...receiptData, offline: true, branchServer: true })
             reduceSoldDrugQuantities(soldItems)
             setCart([])
+            returnHeldCashItemsAfterSale()
             setSearchTerm('')
             syncSearchParam('')
             setReceived('')
@@ -2299,6 +2367,7 @@ const Sales = () => {
         setLastSale({ ...receiptData, offline: true })
         reduceSoldDrugQuantities(soldItems)
         setCart([])
+        returnHeldCashItemsAfterSale()
         setSearchTerm('')
         syncSearchParam('')
         setReceived('')
@@ -2348,6 +2417,7 @@ const Sales = () => {
       // Clear cart
       reduceSoldDrugQuantities(soldItems)
       setCart([])
+      returnHeldCashItemsAfterSale()
       setSearchTerm('')
       syncSearchParam('')
       setReceived('')
@@ -2511,6 +2581,7 @@ const Sales = () => {
         })
         setActiveShift(null)
         setCart([])
+        setHeldCashItems([])
         setCountedCash('')
         setShiftNotes('')
         void saveOfflinePosSnapshot(user?.id, { activeShift: null })
@@ -2526,6 +2597,7 @@ const Sales = () => {
       })
       setActiveShift(null)
       setCart([])
+      setHeldCashItems([])
       setCountedCash('')
       setShiftNotes('')
       notify('Shift closed successfully.', 'success')
@@ -3179,6 +3251,15 @@ const Sales = () => {
             {posLocked ? (
               <p className="drug-results-empty">Open a shift before searching or selecting medicines.</p>
             ) : null}
+            {nhisCatalogueOnlyActive && !posLocked ? (
+              <p className="drug-results-empty" role="status">{NHIS_CATALOGUE_ONLY_LIST_NOTE}</p>
+            ) : null}
+            {nhisCatalogueOnlyActive && !posLocked && !drugSearchLoading && searchTerm.trim()
+              && visiblePosDrugs.length === 0 && getInStockPosDrugs(drugs).length > 0 ? (
+                <p className="drug-results-empty" role="alert">
+                  {getNhisCatalogueOnlyNotListedMessage('This medicine')}
+                </p>
+              ) : null}
             {drugSearchMessage && !drugSearchLoading ? (
               <p className="drug-results-empty">{drugSearchMessage}</p>
             ) : null}
@@ -3202,8 +3283,8 @@ const Sales = () => {
                     >
                       <span className="drug-name">{drug.name}</span>
                       <span className="drug-batch">{drug.batch_number || 'No batch'}</span>
-                      <span className="drug-price">GHS {retailPrice.toFixed(2)}</span>
-                      {hasNhisCatalogPrice(drug) && (
+                      <span className="drug-price">GHS {(nhisCatalogueOnlyActive ? nhisPrice : retailPrice).toFixed(2)}</span>
+                      {hasNhisCatalogPrice(drug) && !nhisCatalogueOnlyActive && (
                         <span className="drug-nhis-price">NHIS GHS {nhisPrice.toFixed(2)}</span>
                       )}
                       {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
@@ -3430,6 +3511,14 @@ const Sales = () => {
                 Card
               </button>
             </div>
+
+            {nhisCatalogueOnlyActive && heldCashItems.length > 0 && (
+              <p className="drug-results-empty" role="status">
+                Kept for a separate cash sale (not on the NHIS list):{' '}
+                {heldCashItems.map((item) => `${item.name} × ${item.quantity}`).join(', ')}.
+                They come back to the cart when this NHIS sale is finished or the payment method changes.
+              </p>
+            )}
 
             {(paymentMethod === 'momo' || paymentMethod === 'card') && (
               <div className="cash-panel">
