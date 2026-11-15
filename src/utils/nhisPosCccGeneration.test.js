@@ -13,6 +13,7 @@ import {
   buildNhisPosAttendanceDetails,
   getNhisPosAttendanceClaimFields,
   buildNhisPosAttendanceMismatchNote,
+  getNhisPosCccRoute,
 } from './nhisPosCccGeneration'
 
 describe('who sees the Generate button (NHIS-008)', () => {
@@ -274,6 +275,28 @@ describe('attendance details carried into the review claim (NHIS-008)', () => {
   })
 })
 
+describe('which route asks NHIA for the code', () => {
+  it('uses the cloud for a facility without a local branch server, as the NHIS claim form does', () => {
+    expect(getNhisPosCccRoute({ branchServerModeEnabled: false, localBranchServerAvailable: false })).toBe('cloud')
+    expect(getNhisPosCccRoute({})).toBe('cloud')
+  })
+
+  it('uses the branch server when this facility runs one and it is online', () => {
+    expect(getNhisPosCccRoute({ branchServerModeEnabled: true, localBranchServerAvailable: true })).toBe('local_branch')
+  })
+
+  it('has no route while the facility branch server is offline', () => {
+    expect(getNhisPosCccRoute({ branchServerModeEnabled: true, localBranchServerAvailable: false })).toBe('unavailable')
+  })
+
+  it('says why when the branch server is offline, and that typing still works', () => {
+    const reason = getNhisPosCccUnavailableReason(null, { route: 'unavailable' })
+    expect(reason).toMatch(/branch server is offline/i)
+    expect(reason).toMatch(/type the 5-digit code/i)
+    expect(getNhisPosCccUnavailableReason(null, { route: 'cloud' })).toMatch(/loading or could not be loaded/)
+  })
+})
+
 describe('point-of-sale wiring (source check)', () => {
   const sales = readFileSync(resolve(process.cwd(), 'src/pages/Sales.jsx'), 'utf8')
 
@@ -291,6 +314,16 @@ describe('point-of-sale wiring (source check)', () => {
     expect(sales).toContain('canGenerateNhisCccAtPos({ role, canManageClaims: profile?.can_manage_claims === true })')
     expect(sales).toContain('id="nhia-ccc-no"')
     expect(sales).toContain('getNhisPosCccIssue({ cccNo: nhiaCccNo, role, overrideReason: nhiaCccOverrideReason })')
+  })
+
+  it('reaches NHIA through the cloud for a facility without a branch server, the way the NHIS page does', () => {
+    expect(sales).toContain("cccIntegration('get_ccc_policy', { organizationId: nhiaCccOrganizationId })")
+    expect(sales).toContain('await generateHostedNhiaCcCode({')
+    expect(sales).toContain("nhiaCccRoute === 'local_branch'")
+    // Still only from the click handler, never from an effect.
+    const handlerStart = sales.indexOf('const handleGenerateNhiaCcc = async')
+    expect(sales.indexOf('await generateHostedNhiaCcCode({')).toBeGreaterThan(handlerStart)
+    expect(sales.match(/generateHostedNhiaCcCode\(/g) || []).toHaveLength(1)
   })
 
   it('carries the NHIA attendance details into the review claim only for the generated code', () => {
