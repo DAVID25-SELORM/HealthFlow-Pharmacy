@@ -33,6 +33,8 @@ import {
 } from '../services/branchServerApi'
 import { logAuthDiagnostic, logAuthSession, observeAuthEnvironment, timeAuthOperation } from '../utils/authDiagnostics'
 import { classifyAuthFailure, isConfirmedAuthFailure } from '../utils/authFailure'
+import { recordWorkspaceLoadFailure } from '../utils/workspaceLoadFailure'
+import { reloadWorkspaceOnce } from '../utils/workspaceAutoReload'
 import { recordSessionActivity, startSessionIdleMonitor } from '../utils/sessionIdleManager'
 
 const AuthContext = createContext(null)
@@ -426,7 +428,7 @@ export const AuthProvider = ({ children }) => {
       const activeSession = sessionRef.current
       if (activeSession) await resolveSessionState(activeSession, { event: 'WORKSPACE_RETRY' })
       else workspaceRecovery.update(false)
-    }))
+    }), { reload: reloadWorkspaceOnce })
     const retryWorkspace = () => { void workspaceRecovery.retry() }
     window.addEventListener('online', retryWorkspace)
     window.addEventListener('healthflow:retry-workspace', retryWorkspace)
@@ -802,9 +804,11 @@ export const AuthProvider = ({ children }) => {
           activeBranch = profileData.branch
           if (!activeProfile) {
             resolutionError = 'Your staff profile is unavailable. Retry loading or contact your administrator.'
+            recordWorkspaceLoadFailure('PROFILE_MISSING')
             logAuthDiagnostic('auth.profile.unavailable', { reason: 'PROFILE_MISSING' })
           } else if (activeProfile.organization_id && !activeOrganization) {
             resolutionError = 'Your workspace could not be loaded. Check your connection and retry.'
+            recordWorkspaceLoadFailure('ORGANIZATION_UNAVAILABLE')
             logAuthDiagnostic('auth.profile.unavailable', { reason: 'ORGANIZATION_UNAVAILABLE' })
           }
         } catch (profileError) {
@@ -816,6 +820,7 @@ export const AuthProvider = ({ children }) => {
             return
           }
           console.error('Unable to load user profile:', profileError)
+          recordWorkspaceLoadFailure(profileError)
           resolutionError = 'Your staff profile could not be loaded. Your session has been retained. Check your connection and retry.'
         }
       }
