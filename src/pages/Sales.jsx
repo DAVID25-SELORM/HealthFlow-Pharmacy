@@ -64,6 +64,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
+import { getBranchScopeId } from '../utils/branchScope'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
 import {
@@ -240,7 +241,9 @@ const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, displayName, role, profile, organization } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhisTopups, nhisTopUpPolicy } = useTenant()
+  const { canUseNhisTopups, nhisTopUpPolicy, canUseMultiBranch } = useTenant()
+  // BRANCH-001: staff who belong to a branch see that branch's recent sales only.
+  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
   const isOnline = useOnlineStatus()
   const [drugs, setDrugs] = useState([])
   const [drugSearchLoading, setDrugSearchLoading] = useState(false)
@@ -576,7 +579,7 @@ const Sales = () => {
         })
         setLoading(false)
 
-        getPosRecentSales(RECENT_SALES_LIMIT)
+        getPosRecentSales(RECENT_SALES_LIMIT, { branchId: branchScopeId })
           .then((recent) => {
             if (!cancelled) {
               setRecentSales(recent || [])
@@ -604,6 +607,7 @@ const Sales = () => {
       cancelled = true
     }
   }, [
+    branchScopeId,
     canProcessRefund,
     isOnline,
     localBranchServerAvailable,
@@ -1118,6 +1122,7 @@ const Sales = () => {
       setLoadingRecentSales(true)
       const recent = await getPosRecentSales(RECENT_SALES_LIMIT, {
         useBranch: localBranchServerAvailable,
+        branchId: branchScopeId,
       })
       setRecentSales(recent || [])
       void saveOfflinePosSnapshot(user?.id, { recentSales: recent || [] })

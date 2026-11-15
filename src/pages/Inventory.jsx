@@ -35,6 +35,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
+import { getBranchScopeId } from '../utils/branchScope'
 import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
@@ -159,7 +160,9 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 const Inventory = () => {
   const { role, profile, branch, user, canAdjustStock, canManagePurchases } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhis, canUseNhisTopups, organization, tierLimits } = useTenant()
+  const { canUseNhis, canUseNhisTopups, canUseMultiBranch, organization, tierLimits } = useTenant()
+  // BRANCH-001: a branch starts with no stock of its own; its staff are told how stock arrives.
+  const inOwnBranch = Boolean(getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch }))
   const organizationId =
     organization?.id || organization?.organization_id || profile?.organization_id || ''
   const showNhisPricing = Boolean(canUseNhis || canUseNhisTopups)
@@ -1236,7 +1239,9 @@ const Inventory = () => {
                 <td colSpan={showNhisPricing ? 10 : 9} style={{ textAlign: 'center', padding: '2rem' }}>
                   {searchTerm || activeFilter !== 'all'
                     ? 'No medicines match the current search or filter.'
-                    : 'No drugs in inventory. Click "Add Drug" to get started.'}
+                    : inOwnBranch
+                      ? 'This branch has no stock yet. Stock arrives by a transfer from another branch (Stock Transfers) or by receiving a purchase here. You can also use "Add Drug" for an opening balance.'
+                      : 'No drugs in inventory. Click "Add Drug" to get started.'}
                 </td>
               </tr>
             ) : (

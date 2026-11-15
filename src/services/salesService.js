@@ -419,6 +419,11 @@ export const getAllSales = async (filters = {}) => {
   if (filters.paymentStatus) {
     query = query.eq('payment_status', filters.paymentStatus)
   }
+
+  // BRANCH-001: staff who belong to a branch see that branch's sales only.
+  if (filters.branchId) {
+    query = query.eq('branch_id', filters.branchId)
+  }
   
   const { data, error } = await query
   
@@ -482,8 +487,8 @@ export const getTodaysSales = async () => {
 }
 
 // Get recent sales
-export const getRecentSales = async (limit = 10) => {
-  const { data, error } = await supabase
+export const getRecentSales = async (limit = 10, { branchId = '' } = {}) => {
+  let query = supabase
     .from('sales')
     .select(`
       *,
@@ -492,6 +497,13 @@ export const getRecentSales = async (limit = 10) => {
     .eq('payment_status', 'completed')
     .order('sale_date', { ascending: false })
     .limit(limit)
+
+  // BRANCH-001: staff who belong to a branch see that branch's sales only.
+  if (branchId) {
+    query = query.eq('branch_id', branchId)
+  }
+
+  const { data, error } = await query
   
   if (error) throw error
   return data

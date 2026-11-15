@@ -45,10 +45,15 @@ describe('salesApi', () => {
 
     expect(mocks.createSale).toHaveBeenCalledWith({ items: [1] })
     expect(mocks.createBranchSale).toHaveBeenCalledWith({ items: [2] })
-    expect(mocks.getRecentSales).toHaveBeenCalledWith(5)
+    expect(mocks.getRecentSales).toHaveBeenCalledWith(5, { branchId: '' })
     expect(mocks.getBranchRecentSales).toHaveBeenCalledWith(6)
     expect(mocks.getSaleById).toHaveBeenCalledWith('cloud-sale')
     expect(mocks.getBranchSale).toHaveBeenCalledWith('branch-sale')
+  })
+
+  it('limits recent cloud sales to the branch it is given (BRANCH-001)', async () => {
+    await getPosRecentSales(8, { branchId: 'branch-b' })
+    expect(mocks.getRecentSales).toHaveBeenCalledWith(8, { branchId: 'branch-b' })
   })
 
   it('keeps refunds on the hardened cloud transaction', async () => {

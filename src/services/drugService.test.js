@@ -72,6 +72,60 @@ describe('drugService catalog handling', () => {
     expect(fromMock).toHaveBeenCalledTimes(2)
   })
 
+  describe('stock alerts limited to one branch (BRANCH-001)', () => {
+    const inDays = (days) => {
+      const date = new Date()
+      date.setDate(date.getDate() + days)
+      return date.toISOString().slice(0, 10)
+    }
+
+    it('reads the low-stock alert for a branch through the branch-aware inventory call, not the organisation-wide view', async () => {
+      invokeTierAccess.mockResolvedValue({
+        drugs: [
+          { id: 'low', name: 'Low item', quantity: 2, reorder_level: 10, status: 'active' },
+          { id: 'fine', name: 'Fine item', quantity: 50, reorder_level: 10, status: 'active' },
+        ],
+      })
+
+      const rows = await getLowStockDrugs({ branchId: 'branch-b' })
+
+      expect(rows.map((row) => row.id)).toEqual(['low'])
+      expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({ action: 'get_drugs', branchId: 'branch-b' }))
+      expect(fromMock).not.toHaveBeenCalled()
+    })
+
+    it('reads the expiring alert for a branch the same way and keeps only what expires within 30 days', async () => {
+      invokeTierAccess.mockResolvedValue({
+        drugs: [
+          { id: 'soon', name: 'Soon', quantity: 5, expiry_date: inDays(10), status: 'active' },
+          { id: 'later', name: 'Later', quantity: 5, expiry_date: inDays(90), status: 'active' },
+          { id: 'gone', name: 'Already expired', quantity: 5, expiry_date: inDays(-3), status: 'active' },
+          { id: 'none', name: 'No expiry', quantity: 5, expiry_date: null, status: 'active' },
+        ],
+      })
+
+      const rows = await getExpiringDrugs({ branchId: 'branch-b' })
+
+      expect(rows.map((row) => row.id)).toEqual(['soon'])
+      expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({ action: 'get_drugs', branchId: 'branch-b' }))
+      expect(fromMock).not.toHaveBeenCalled()
+    })
+
+    it('keeps each branch and the whole organisation apart in the short-lived alert cache', async () => {
+      invokeTierAccess.mockResolvedValueOnce({ drugs: [{ id: 'b-low', quantity: 1, reorder_level: 10, status: 'active' }] })
+      invokeTierAccess.mockResolvedValueOnce({ drugs: [{ id: 'c-low', quantity: 1, reorder_level: 10, status: 'active' }] })
+      fromMock.mockImplementationOnce(() => ({ select: vi.fn().mockResolvedValue({ data: [{ id: 'org-low', quantity: 1 }], error: null }) }))
+
+      const branchB = await getLowStockDrugs({ branchId: 'branch-b' })
+      const branchC = await getLowStockDrugs({ branchId: 'branch-c' })
+      const wholeOrganisation = await getLowStockDrugs()
+
+      expect(branchB.map((row) => row.id)).toEqual(['b-low'])
+      expect(branchC.map((row) => row.id)).toEqual(['c-low'])
+      expect(wholeOrganisation.map((row) => row.id)).toEqual(['org-low'])
+    })
+  })
+
   const createDirectDrugQuery = (rows) => {
     const queryBuilder = {
       select: vi.fn(),

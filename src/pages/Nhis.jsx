@@ -24,6 +24,8 @@ import {
 import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useTenant } from '../context/TenantContext'
+import { getBranchScopeId } from '../utils/branchScope'
 import { useNotification } from '../context/NotificationContext'
 import { confirmAction } from '../utils/actionConfirmation'
 import { clearUnsavedDraft, loadUnsavedDraft, saveUnsavedDraft } from '../services/unsavedDraftRecovery'
@@ -1379,6 +1381,9 @@ const Nhis = () => {
     canViewReports,
     canManagePatients,
   } = useAuth()
+  const { canUseMultiBranch } = useTenant()
+  // BRANCH-001: staff who belong to a branch see that branch's stock only.
+  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInputRef = useRef(null)
@@ -2261,7 +2266,12 @@ const Nhis = () => {
   const ensureInventoryDrugsLoaded = useCallback(async () => {
     if (inventoryDrugs.length > 0) return inventoryDrugs
     if (!inventoryDrugsLoadPromiseRef.current) {
-      inventoryDrugsLoadPromiseRef.current = getAllDrugs({ includeCatalog: true, preferDirectRead: true })
+      // BRANCH-001: staff who belong to a branch pick from that branch's stock only.
+      inventoryDrugsLoadPromiseRef.current = getAllDrugs({
+        includeCatalog: true,
+        preferDirectRead: true,
+        branchId: branchScopeId || undefined,
+      })
         .catch((inventoryLoadError) => {
           console.warn('[NHIS] Inventory catalog could not be preloaded.', inventoryLoadError)
           return []
@@ -2274,7 +2284,7 @@ const Nhis = () => {
     const loadedInventoryDrugs = await inventoryDrugsLoadPromiseRef.current
     setInventoryDrugs(loadedInventoryDrugs || [])
     return loadedInventoryDrugs || []
-  }, [inventoryDrugs])
+  }, [inventoryDrugs, branchScopeId])
 
   const hydrateClaimForAction = useCallback(async (claim) => {
     if (!claim?._summaryOnly) return claim

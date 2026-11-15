@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { subscribeToHealthflowDataChanged } from '../../lib/appEvents'
 import { useNotification } from '../../context/NotificationContext'
 import { useTenant } from '../../context/TenantContext'
+import { getBranchScopeId } from '../../utils/branchScope'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
@@ -64,13 +65,16 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
     assignedRoles = [],
     setActiveRole,
     branch,
+    profile,
     canManageInventory,
     canManageClaims,
     canViewReports,
     loading: authLoading,
     signOut,
   } = useAuth()
-  const { canUseClaims, tierLimits } = useTenant()
+  const { canUseClaims, tierLimits, canUseMultiBranch } = useTenant()
+  // BRANCH-001: the alert bell counts the member of staff's own branch only.
+  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
   const { notify } = useNotification()
   const isOnline = useOnlineStatus()
   const [connectivity, setConnectivity] = useState(getConnectivityState())
@@ -172,8 +176,8 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
     try {
       const canViewClaimAlerts = canUseClaims && tierLimits.hasClaims && canUseClaimAlerts
       const [lowStock, expiring, claimStats] = await Promise.all([
-        canUseInventorySearch ? getLowStockDrugs() : Promise.resolve([]),
-        canUseInventorySearch ? getExpiringDrugs() : Promise.resolve([]),
+        canUseInventorySearch ? getLowStockDrugs({ branchId: branchScopeId }) : Promise.resolve([]),
+        canUseInventorySearch ? getExpiringDrugs({ branchId: branchScopeId }) : Promise.resolve([]),
         canViewClaimAlerts ? getClaimsStatistics() : Promise.resolve({ pending: 0 }),
       ])
 

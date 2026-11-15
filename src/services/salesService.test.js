@@ -32,7 +32,7 @@ vi.mock('./shiftService', () => ({
   addShiftMovement: mocks.addShiftMovement,
 }))
 
-import { createSale, refundSale } from './salesService'
+import { createSale, getAllSales, getRecentSales, refundSale } from './salesService'
 
 describe('salesService.createSale', () => {
   let errorSpy
@@ -305,5 +305,52 @@ describe('salesService.refundSale', () => {
         createdBy: 'user-1',
       })
     )
+  })
+})
+
+describe('sales reads are limited to one branch when asked (BRANCH-001)', () => {
+  const makeQuery = (result = { data: [], error: null }) => {
+    const query = {}
+    for (const method of ['select', 'order', 'gte', 'lte', 'eq', 'limit']) {
+      query[method] = vi.fn(() => query)
+    }
+    query.then = (resolve, reject) => Promise.resolve(result).then(resolve, reject)
+    return query
+  }
+
+  beforeEach(() => {
+    mocks.from.mockReset()
+  })
+
+  it('filters recent sales by branch', async () => {
+    const query = makeQuery()
+    mocks.from.mockReturnValue(query)
+
+    await getRecentSales(5, { branchId: 'branch-b' })
+
+    expect(query.eq).toHaveBeenCalledWith('payment_status', 'completed')
+    expect(query.eq).toHaveBeenCalledWith('branch_id', 'branch-b')
+  })
+
+  it('does not filter recent sales when no branch is given', async () => {
+    const query = makeQuery()
+    mocks.from.mockReturnValue(query)
+
+    await getRecentSales(5)
+    await getRecentSales(5, { branchId: '' })
+
+    expect(query.eq.mock.calls.filter(([column]) => column === 'branch_id')).toHaveLength(0)
+  })
+
+  it('filters sales history by branch and leaves it alone otherwise', async () => {
+    const scoped = makeQuery()
+    mocks.from.mockReturnValueOnce(scoped)
+    await getAllSales({ paymentStatus: 'completed', branchId: 'branch-b' })
+    expect(scoped.eq).toHaveBeenCalledWith('branch_id', 'branch-b')
+
+    const unscoped = makeQuery()
+    mocks.from.mockReturnValueOnce(unscoped)
+    await getAllSales({ paymentStatus: 'completed' })
+    expect(unscoped.eq.mock.calls.filter(([column]) => column === 'branch_id')).toHaveLength(0)
   })
 })

@@ -13,8 +13,8 @@ import {
 export const createPosSale = async (salePayload, { useBranch = false } = {}) =>
   useBranch ? createBranchSale(salePayload) : createSale(salePayload)
 
-export const getPosRecentSales = async (limit = 8, { useBranch = false } = {}) =>
-  useBranch ? getBranchRecentSales(limit) : getRecentSales(limit)
+export const getPosRecentSales = async (limit = 8, { useBranch = false, branchId = '' } = {}) =>
+  useBranch ? getBranchRecentSales(limit) : getRecentSales(limit, { branchId })
 
 export const getPosSaleById = async (saleId, { useBranch = false } = {}) =>
   useBranch ? getBranchSale(saleId) : getSaleById(saleId)

@@ -22,6 +22,7 @@ import { getAllSales, getRecentSales } from '../services/salesService'
 import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
 import { useTenant } from '../context/TenantContext'
+import { getBranchScopeId } from '../utils/branchScope'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { CLAIMS_ROLES, INVENTORY_ROLES, NHIS_ROLES, hasRole } from '../utils/roles'
 import { STOCK_SEVERITY, getStockSeverity } from '../utils/reorderCentre'
@@ -287,7 +288,7 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 
 const Dashboard = () => {
   const navigate = useNavigate()
-  const { role, displayName, canManageInventory, canManageClaims, canManagePurchases } = useAuth()
+  const { role, profile, displayName, canManageInventory, canManageClaims, canManagePurchases } = useAuth()
   const {
     tierLimits,
     organization,
@@ -300,6 +301,8 @@ const Dashboard = () => {
     canUseAccounting,
     canUseMultiBranch,
   } = useTenant()
+  // BRANCH-001: staff who belong to a branch see that branch's sales and stock alerts only.
+  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [chartMode, setChartMode] = useSessionStorageState(
@@ -365,10 +368,11 @@ const Dashboard = () => {
           endDate: today.toISOString(),
           paymentStatus: 'completed',
           columns: 'id, sale_date, net_amount, payment_status, payment_method',
+          branchId: branchScopeId || undefined,
         }),
-        getRecentSales(5),
-        canViewOperationalMetrics ? getLowStockDrugs() : Promise.resolve([]),
-        canViewOperationalMetrics ? getExpiringDrugs() : Promise.resolve([]),
+        getRecentSales(5, { branchId: branchScopeId }),
+        canViewOperationalMetrics ? getLowStockDrugs({ branchId: branchScopeId }) : Promise.resolve([]),
+        canViewOperationalMetrics ? getExpiringDrugs({ branchId: branchScopeId }) : Promise.resolve([]),
         canViewClaimsMetrics ? getRecentClaims(5) : Promise.resolve([]),
       ])
 
