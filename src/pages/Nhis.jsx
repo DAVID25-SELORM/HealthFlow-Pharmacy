@@ -93,8 +93,8 @@ import {
   checkNhisExportReadiness,
   prepareNhisClaimsExport,
   prepareNhisSingleClaimExport,
-  getNhisDuplicateExportPolicy,
-  saveNhisDuplicateExportPolicy,
+  getNhisEarlyRefillExportPolicy,
+  saveNhisEarlyRefillExportPolicy,
   buildNhisDurationRepairReview,
   normalizeNhisManualDurationCorrection,
   applyNhisDurationRepairs,
@@ -1668,8 +1668,8 @@ const Nhis = () => {
   const [exportToDate, setExportToDate] = useState(todayIsoDate())
   const [exportFormat, setExportFormat] = useState('cxf')
   const [exportRoute, setExportRoute] = useState('cxf_export')
-  const [duplicateExportPolicy, setDuplicateExportPolicy] = useState({ allow_duplicate_exports: false })
-  const [duplicateExportPolicySaving, setDuplicateExportPolicySaving] = useState(false)
+  const [earlyRefillExportPolicy, setEarlyRefillExportPolicy] = useState({ allow_early_refill_exports: false })
+  const [earlyRefillExportPolicySaving, setEarlyRefillExportPolicySaving] = useState(false)
   const [exporting, setExporting]       = useState(false)
   const [exportProgress, setExportProgress] = useState('')
   const [exportStartedAt, setExportStartedAt] = useState(null)
@@ -1695,38 +1695,44 @@ const Nhis = () => {
   const durationRepairResumeTargetRef = useRef({ type: 'batch' })
   const durationRepairTableRef = useRef(null)
 
-  const canManageDuplicateExportPolicy = ['admin', 'super_admin'].includes(normalizedRole)
+  // NHIS-007: only an administrator may allow "early refill review" claims to be exported.
+  const canManageEarlyRefillExportPolicy = ['admin', 'super_admin'].includes(normalizedRole)
 
   useEffect(() => {
     if (!showExportModal || !organizationId) return undefined
     let cancelled = false
-    getNhisDuplicateExportPolicy(organizationId).then((policy) => {
-      if (!cancelled) setDuplicateExportPolicy(policy || { allow_duplicate_exports: false })
+    getNhisEarlyRefillExportPolicy(organizationId).then((policy) => {
+      if (!cancelled) setEarlyRefillExportPolicy(policy || { allow_early_refill_exports: false })
     })
     return () => { cancelled = true }
   }, [showExportModal, organizationId])
 
-  const handleDuplicateExportPolicyChange = async (event) => {
+  const handleEarlyRefillExportPolicyChange = async (event) => {
     const enabled = event.target.checked
-    const previous = duplicateExportPolicy
-    setDuplicateExportPolicy((current) => ({ ...current, allow_duplicate_exports: enabled }))
+    const previous = earlyRefillExportPolicy
+    setEarlyRefillExportPolicy((current) => ({ ...current, allow_early_refill_exports: enabled }))
     try {
-      setDuplicateExportPolicySaving(true)
-      const saved = await saveNhisDuplicateExportPolicy(organizationId, enabled)
-      setDuplicateExportPolicy(saved)
+      setEarlyRefillExportPolicySaving(true)
+      const saved = await saveNhisEarlyRefillExportPolicy(organizationId, enabled)
+      setEarlyRefillExportPolicy(saved)
       await tryLogAuditEvent({
-        eventType: 'nhis_claim.duplicate_export_policy_changed',
-        entityType: 'organization_nhis_duplicate_export_policy',
+        eventType: 'nhis_claim.early_refill_export_policy_changed',
+        entityType: 'organization_nhis_early_refill_export_policy',
         entityId: organizationId,
-        action: enabled ? 'allow_duplicate_exports' : 'block_duplicate_exports',
-        details: { allow_duplicate_exports: enabled, user_id: user?.id || '', role: normalizedRole },
+        action: enabled ? 'allow_early_refill_exports' : 'block_early_refill_exports',
+        details: { allow_early_refill_exports: enabled, user_id: user?.id || '', role: normalizedRole },
       })
-      notify(enabled ? 'Duplicate exports are enabled for this pharmacy.' : 'Duplicate exports are blocked for this pharmacy.', 'success')
+      notify(
+        enabled
+          ? 'Early refill claims can now be exported for this pharmacy.'
+          : 'Early refill claims are blocked from export for this pharmacy.',
+        'success'
+      )
     } catch (error) {
-      setDuplicateExportPolicy(previous)
-      notify(getErrorMessage(error, 'Unable to save duplicate export policy.'), 'error')
+      setEarlyRefillExportPolicy(previous)
+      notify(getErrorMessage(error, 'Unable to save early refill export policy.'), 'error')
     } finally {
-      setDuplicateExportPolicySaving(false)
+      setEarlyRefillExportPolicySaving(false)
     }
   }
 
@@ -6186,15 +6192,15 @@ const Nhis = () => {
       }
       exportRecordingRef.current = null
       setCxfRecordingIssue(null)
-      if (preparedReadiness.duplicateExportsAllowed && preparedReadiness.duplicateGroups?.length) {
+      if (preparedReadiness.earlyRefillExportsAllowed && preparedReadiness.releasedEarlyRefillClaims?.claim_count > 0) {
         await tryLogAuditEvent({
-          eventType: 'nhis_claim.duplicate_export_allowed',
+          eventType: 'nhis_claim.early_refill_export_allowed',
           entityType: 'nhis_claims',
           entityId: null,
-          action: 'export_duplicate_groups',
+          action: 'export_early_refill_claims',
           details: {
-            duplicate_summary: getDuplicateScrubAuditSummary(preparedReadiness.duplicateGroups),
-            policy: 'organization_allow_duplicate_exports',
+            released_summary: preparedReadiness.releasedEarlyRefillClaims,
+            policy: 'organization_allow_early_refill_exports',
             format: selectedFormat,
             direct_submit: submitDirectApi,
             user_id: user?.id || '',
@@ -10776,16 +10782,16 @@ const Nhis = () => {
                 <label>
                   <input
                     type="checkbox"
-                    checked={duplicateExportPolicy.allow_duplicate_exports === true}
-                    disabled={!canManageDuplicateExportPolicy || duplicateExportPolicySaving}
-                    onChange={handleDuplicateExportPolicyChange}
+                    checked={earlyRefillExportPolicy.allow_early_refill_exports === true}
+                    disabled={!canManageEarlyRefillExportPolicy || earlyRefillExportPolicySaving}
+                    onChange={handleEarlyRefillExportPolicyChange}
                   />{' '}
-                  Allow duplicate NHIS claims to be exported automatically
+                  Allow early refill claims to be exported
                 </label>
                 <small>
-                  {canManageDuplicateExportPolicy
-                    ? 'When disabled, duplicate groups still require the existing per-group review. This setting applies to this pharmacy only.'
-                    : 'Only an organization administrator can change this pharmacy setting. Duplicate groups remain blocked.'}
+                  {canManageEarlyRefillExportPolicy
+                    ? 'When ticked, claims held back only by an "early refill review" alert are included in the export. NHIA may reject or reduce payment for an early refill. Any other blocker still stops the claim. This setting applies to this pharmacy only.'
+                    : 'Only an organization administrator can change this pharmacy setting. Early refill claims remain blocked.'}
                 </small>
               </div>
               {directNhiaApiAvailable && (

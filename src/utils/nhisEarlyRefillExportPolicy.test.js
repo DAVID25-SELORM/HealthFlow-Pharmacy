@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest'
+import {
+  NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPE,
+  buildNhisEarlyRefillReleaseSummary,
+  isNhisEarlyRefillReviewAlert,
+  splitNhisEarlyRefillAlerts,
+} from './nhisEarlyRefillExportPolicy'
+
+const alert = (matchType, extra = {}) => ({ match_type: matchType, medicine_description: 'Lisinopril Tablet, 2.5 mg', ...extra })
+
+describe('splitNhisEarlyRefillAlerts (NHIS-007)', () => {
+  it('releases nothing while the policy is off or not exactly true', () => {
+    const alerts = [alert('early_refill_review'), alert('same_ingredient')]
+
+    for (const allow of [false, undefined, null, 'true', 1, 'yes']) {
+      expect(splitNhisEarlyRefillAlerts(alerts, { allow })).toEqual({ blocking: alerts, released: [] })
+    }
+    expect(splitNhisEarlyRefillAlerts(alerts)).toEqual({ blocking: alerts, released: [] })
+  })
+
+  it('releases only the early refill review alert type when the policy is on', () => {
+    const early = alert('early_refill_review')
+    const others = [
+      alert('similar_active_ingredient'),
+      alert('possible_completion_supply'),
+      alert('partial_previous_supply'),
+      alert('same_ingredient'),
+      alert('exact_code'),
+      alert(''),
+      alert(undefined),
+    ]
+
+    const { blocking, released } = splitNhisEarlyRefillAlerts([early, ...others], { allow: true })
+
+    expect(released).toEqual([early])
+    expect(blocking).toEqual(others)
+  })
+
+  it('treats the match type case-insensitively and accepts a camelCase field', () => {
+    expect(isNhisEarlyRefillReviewAlert({ match_type: ' EARLY_REFILL_REVIEW ' })).toBe(true)
+    expect(isNhisEarlyRefillReviewAlert({ matchType: 'early_refill_review' })).toBe(true)
+    expect(isNhisEarlyRefillReviewAlert({ match_type: 'early_refill_review_extra' })).toBe(false)
+    expect(isNhisEarlyRefillReviewAlert(null)).toBe(false)
+    expect(NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPE).toBe('early_refill_review')
+  })
+
+  it('tolerates missing or non-array input', () => {
+    expect(splitNhisEarlyRefillAlerts(undefined, { allow: true })).toEqual({ blocking: [], released: [] })
+    expect(splitNhisEarlyRefillAlerts(null, { allow: true })).toEqual({ blocking: [], released: [] })
+    expect(splitNhisEarlyRefillAlerts('x', { allow: true })).toEqual({ blocking: [], released: [] })
+  })
+
+  it('does not change the order of the alerts that keep blocking', () => {
+    const a = alert('same_ingredient', { id: 'a' })
+    const b = alert('early_refill_review', { id: 'b' })
+    const c = alert('exact_code', { id: 'c' })
+
+    expect(splitNhisEarlyRefillAlerts([a, b, c], { allow: true }).blocking.map((item) => item.id)).toEqual(['a', 'c'])
+  })
+})
+
+describe('buildNhisEarlyRefillReleaseSummary', () => {
+  it('groups released alerts by claim and lists each medicine once', () => {
+    const summary = buildNhisEarlyRefillReleaseSummary([
+      { claimId: 'c1', claimNumber: 'NHIS-000001', medicine: 'Lisinopril Tablet, 2.5 mg' },
+      { claimId: 'c1', claimNumber: 'NHIS-000001', medicine: 'Lisinopril Tablet, 2.5 mg' },
+      { claimId: 'c1', claimNumber: 'NHIS-000001', medicine: 'Amlodipine Tablet 5mg' },
+      { claimId: 'c2', claimNumber: 'NHIS-000002', medicine: 'Metformin' },
+    ])
+
+    expect(summary.claim_count).toBe(2)
+    expect(summary.truncated).toBe(false)
+    expect(summary.claims).toEqual([
+      { claim_id: 'c1', claim_number: 'NHIS-000001', medicines: ['Lisinopril Tablet, 2.5 mg', 'Amlodipine Tablet 5mg'] },
+      { claim_id: 'c2', claim_number: 'NHIS-000002', medicines: ['Metformin'] },
+    ])
+  })
+
+  it('is empty when nothing was released', () => {
+    expect(buildNhisEarlyRefillReleaseSummary([])).toEqual({ claim_count: 0, claims: [], truncated: false })
+    expect(buildNhisEarlyRefillReleaseSummary(undefined)).toEqual({ claim_count: 0, claims: [], truncated: false })
+    expect(buildNhisEarlyRefillReleaseSummary([{ medicine: 'x' }])).toEqual({ claim_count: 0, claims: [], truncated: false })
+  })
+
+  it('keeps the audit payload small for a large export but still counts every claim', () => {
+    const entries = Array.from({ length: 40 }, (_, index) => ({ claimId: `c${index}`, claimNumber: `NHIS-${index}`, medicine: 'x' }))
+
+    const summary = buildNhisEarlyRefillReleaseSummary(entries)
+
+    expect(summary.claim_count).toBe(40)
+    expect(summary.claims).toHaveLength(25)
+    expect(summary.truncated).toBe(true)
+  })
+})
