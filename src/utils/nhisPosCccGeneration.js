@@ -152,7 +152,8 @@ export const buildNhisPosAttendanceDetails = (result, { memberNumber = '' } = {}
 // The fields added to the review claim. Only while the code in the box is still the one NHIA
 // generated: once the cashier changes the code, the details no longer describe it.
 // The patient's own record stays the identity of the sale: NHIA's gender and date of birth fill
-// only blanks, and the name is never replaced. NHIA's HIN is used when it is present.
+// only blanks, and the name is never replaced. NHIA's HIN fills a blank HIN only, so a
+// different HIN never overwrites the patient record (the claim save writes the HIN back to it).
 // Nothing is carried when the attendance date is not the sale's service date.
 export const getNhisPosAttendanceClaimFields = (details, { currentCode = '', patient = {}, serviceDate = '' } = {}) => {
   if (!details || normalizeCode(currentCode) !== details.ccCode) return {}
@@ -161,7 +162,7 @@ export const getNhisPosAttendanceClaimFields = (details, { currentCode = '', pat
   if (details.attendanceDate && cleanDate(serviceDate) && details.attendanceDate !== cleanDate(serviceDate)) return {}
 
   const fields = {}
-  if (details.hin) fields.hin = details.hin
+  if (details.hin && !clean(patient?.nhis_hin)) fields.hin = details.hin
   if (!clean(patient?.gender) && details.gender) fields.gender = details.gender
   if (!clean(patient?.date_of_birth) && details.dateOfBirth) fields.dateOfBirth = details.dateOfBirth
   if (details.authId) fields.authId = details.authId

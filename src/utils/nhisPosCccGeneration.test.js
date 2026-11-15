@@ -225,7 +225,6 @@ describe('attendance details carried into the review claim (NHIS-008)', () => {
 
   it('adds the attendance fields to the review claim while the code is the generated one', () => {
     expect(getNhisPosAttendanceClaimFields(details, claimContext)).toEqual({
-      hin: '47128067',
       authId: 'E87A711E-ECE0-F111-9E6F-E0071BF203B7',
       authType: 'NHIS',
       newCcc: 'yes',
@@ -247,14 +246,17 @@ describe('attendance details carried into the review claim (NHIS-008)', () => {
     expect(getNhisPosAttendanceClaimFields(details, { ...claimContext, serviceDate: '2026-11-16' })).toEqual({})
   })
 
-  it('fills the patient gender and date of birth only when the record has none, and never the name', () => {
+  it('fills the patient HIN, gender and date of birth only when the record has none, and never the name', () => {
     const blank = getNhisPosAttendanceClaimFields(details, { ...claimContext, patient: {} })
+    expect(blank.hin).toBe('47128067')
     expect(blank.gender).toBe('Female')
     expect(blank.dateOfBirth).toBe('1980-10-31')
     expect(blank).not.toHaveProperty('surname')
     expect(blank).not.toHaveProperty('otherNames')
 
     const recorded = getNhisPosAttendanceClaimFields(details, claimContext)
+    expect(recorded).not.toHaveProperty('hin')
+    expect(getNhisPosAttendanceClaimFields(details, { ...claimContext, patient: { nhis_hin: '11111111' } })).not.toHaveProperty('hin')
     expect(recorded).not.toHaveProperty('gender')
     expect(recorded).not.toHaveProperty('dateOfBirth')
   })
