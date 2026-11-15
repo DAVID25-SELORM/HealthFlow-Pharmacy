@@ -61,6 +61,12 @@ import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
+import {
+  NHIS_POS_CCC_OVERRIDE_REASON_MAX_LENGTH,
+  buildNhisPosCccOverrideNote,
+  canOverrideNhisPosCcc,
+  getNhisPosCccIssue,
+} from '../utils/nhisPosCccRule'
 import { getInStockPosDrugs } from '../utils/posInventory'
 import {
   normalizeNhiaMemberNumber,
@@ -240,6 +246,13 @@ const Sales = () => {
   // This is only copied into the separate NHIS review claim; it never
   // changes the completed POS sale or its accounting entries.
   const [nhiaCccNo, setNhiaCccNo] = useState('')
+  // NHIS-006: a manager, admin or claims officer may complete an NHIS sale without a
+  // code, but must give a reason, which is written into the review claim notes.
+  const [nhiaCccOverrideReason, setNhiaCccOverrideReason] = useState('')
+  const clearNhiaCccFields = useCallback(() => {
+    setNhiaCccNo('')
+    setNhiaCccOverrideReason('')
+  }, [])
   const posDraftRecoveryReadyRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
@@ -776,7 +789,7 @@ const Sales = () => {
 
   const selectPatientForSale = (patient) => {
     // A CCC belongs to one member; never carry it forward when the patient changes.
-    setNhiaCccNo('')
+    clearNhiaCccFields()
     if (!patient) {
       setPatientId('')
       setPatientSearchTerm('')
@@ -1373,7 +1386,7 @@ const Sales = () => {
       setPatientTopUpMethod('cash')
       setNhiaDiagnosis('')
       setNhiaDiagnosisDetails([])
-      setNhiaCccNo('')
+      clearNhiaCccFields()
       return
     }
 
@@ -1570,6 +1583,12 @@ const Sales = () => {
           policyAdjustmentAmount > 0
             ? `NHIS policy adjustment (not charged to patient): GHS ${policyAdjustmentAmount.toFixed(2)}`
             : null,
+          buildNhisPosCccOverrideNote({
+            cccNo: nhiaCccNo,
+            role,
+            overrideReason: nhiaCccOverrideReason,
+            actorLabel: displayName || '',
+          }) || null,
         ].filter(Boolean).join('\n'),
       },
       medicines,
@@ -1721,9 +1740,12 @@ const Sales = () => {
           return
         }
 
-        const enteredCccNo = normalizeNhisCcCode(nhiaCccNo)
-        if (enteredCccNo && enteredCccNo.length !== 5) {
-          notify('CCC / CC Code must contain exactly 5 digits, or be left blank for claims-officer review.', 'warning')
+        // NHIS-006: a valid 5-digit CCC/CC code is required; a manager, admin or claims
+        // officer may complete the sale without one by giving a reason.
+        const cccIssue = getNhisPosCccIssue({ cccNo: nhiaCccNo, role, overrideReason: nhiaCccOverrideReason })
+        if (cccIssue) {
+          notify(cccIssue, 'warning')
+          document.getElementById('nhia-ccc-no')?.focus()
           return
         }
 
@@ -1936,7 +1958,7 @@ const Sales = () => {
         setPatientTopUpMethod('cash')
         setNhiaDiagnosis('')
         setNhiaDiagnosisDetails([])
-        setNhiaCccNo('')
+        clearNhiaCccFields()
         setPaymentPhone('')
         setPaymentEmail('')
         selectPatientForSale(null)
@@ -2026,7 +2048,7 @@ const Sales = () => {
           setPatientTopUpMethod('cash')
           setNhiaDiagnosis('')
           setNhiaDiagnosisDetails([])
-          setNhiaCccNo('')
+          clearNhiaCccFields()
           selectPatientForSale(null)
           const syncMessage = isOnline
             ? ' Review records have been queued for sync.'
@@ -2085,7 +2107,7 @@ const Sales = () => {
             setPatientTopUpMethod('cash')
             setNhiaDiagnosis('')
             setNhiaDiagnosisDetails([])
-            setNhiaCccNo('')
+            clearNhiaCccFields()
             selectPatientForSale(null)
             notify(
               `Sale saved to the local branch server.${claimMessage} It will sync to HealthFlow Cloud when internet returns.`,
@@ -2141,7 +2163,7 @@ const Sales = () => {
         setPatientTopUpMethod('cash')
         setNhiaDiagnosis('')
         setNhiaDiagnosisDetails([])
-        setNhiaCccNo('')
+        clearNhiaCccFields()
         selectPatientForSale(null)
         await refreshOfflineSalesSummary()
         notify('Sale saved offline. Keep this shift open until it syncs when internet returns.', 'success')
@@ -2190,7 +2212,7 @@ const Sales = () => {
       setPatientTopUpMethod('cash')
       setNhiaDiagnosis('')
       setNhiaDiagnosisDetails([])
-      setNhiaCccNo('')
+      clearNhiaCccFields()
       selectPatientForSale(null)
       
       notify(`Sale completed successfully.${claimMessage}`, 'success')
@@ -3393,7 +3415,7 @@ const Sales = () => {
                   )}
                   {isNhiaClaimSale && (
                     <div className="cash-field cash-field-input">
-                      <label htmlFor="nhia-ccc-no">CCC / CC Code</label>
+                      <label htmlFor="nhia-ccc-no">CCC / CC Code *</label>
                       <input
                         id="nhia-ccc-no"
                         className="form-input"
@@ -3402,7 +3424,20 @@ const Sales = () => {
                         pattern="[0-9]{0,5}"
                         value={nhiaCccNo}
                         onChange={(event) => setNhiaCccNo(normalizeNhisCcCode(event.target.value).slice(0, 5))}
-                        placeholder="Optional — required before export"
+                        placeholder="5-digit code from NHIA"
+                      />
+                    </div>
+                  )}
+                  {isNhiaClaimSale && canOverrideNhisPosCcc(role) && !normalizeNhisCcCode(nhiaCccNo) && (
+                    <div className="cash-field cash-field-input">
+                      <label htmlFor="nhia-ccc-override-reason">Reason for completing without a CC code</label>
+                      <input
+                        id="nhia-ccc-override-reason"
+                        className="form-input"
+                        maxLength={NHIS_POS_CCC_OVERRIDE_REASON_MAX_LENGTH}
+                        value={nhiaCccOverrideReason}
+                        onChange={(event) => setNhiaCccOverrideReason(event.target.value)}
+                        placeholder="Only if NHIA is unavailable — saved on the claim"
                       />
                     </div>
                   )}

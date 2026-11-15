@@ -24,6 +24,14 @@ describe('NHIS CCC persistence contract', () => {
     expect(salesPage).toContain('const [nhiaCccNo, setNhiaCccNo] = useState(\'\')')
     expect(salesPage).toContain('cccNo: normalizeNhisCcCode(nhiaCccNo).slice(0, 5)')
     expect(salesPage).toContain('id="nhia-ccc-no"')
-    expect(salesPage).toContain("CCC / CC Code must contain exactly 5 digits, or be left blank for claims-officer review.")
+  })
+
+  // NHIS-006 replaces the earlier behaviour where the POS code box was optional and a
+  // blank code was "left for claims-officer review". The code is now required; a manager,
+  // admin or claims officer may complete the sale without it by giving a recorded reason.
+  it('requires a CCC at NHIA POS checkout, with a recorded reason for the senior-staff override', () => {
+    expect(salesPage).not.toContain('or be left blank for claims-officer review')
+    expect(salesPage).toContain('getNhisPosCccIssue({ cccNo: nhiaCccNo, role, overrideReason: nhiaCccOverrideReason })')
+    expect(salesPage).toContain('buildNhisPosCccOverrideNote(')
   })
 })
