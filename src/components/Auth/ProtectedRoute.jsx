@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { describeWorkspaceLoadFailure, getLastWorkspaceLoadFailure } from '../../utils/workspaceLoadFailure'
 
 const ProtectedRoute = ({ children }) => {
   const { loading, isAuthenticated, isConfigured, organization, role, signOut, profileLoadError } = useAuth()
@@ -26,10 +27,13 @@ const ProtectedRoute = ({ children }) => {
   }
 
   if (profileLoadError) {
+    const lastFailure = getLastWorkspaceLoadFailure()
     return (
       <div role="alert" style={{ padding: '2rem', maxWidth: '640px' }}>
         <h2>Unable to load workspace</h2>
         <p>{profileLoadError}</p>
+        {lastFailure && <p>{describeWorkspaceLoadFailure(lastFailure.category)}</p>}
+        <p>HealthFlow is trying again automatically. You can also press Retry loading.</p>
         <button type="button" className="btn btn-primary" onClick={() => window.dispatchEvent(new Event('healthflow:retry-workspace'))}>Retry loading</button>
       </div>
     )

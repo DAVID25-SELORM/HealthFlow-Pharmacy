@@ -8,7 +8,7 @@
   "testFileCount": 148,
   "criticalFiles": {
     "src/services/nhisService.js": "17ff58ef59bef1f70de4a091b62a6f8ace69591ee048b3dfcf1ee08b8ad6cdd6",
-    "src/context/AuthContext.jsx": "0df048a03e1bf786d13d289bea4ccbb42167cccb46bba560cc50fff960aab258",
+    "src/context/AuthContext.jsx": "bc9a4238845d4f0254f58f623197b2404da98def22740d4389c0dabe8f1c1249",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
     "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
