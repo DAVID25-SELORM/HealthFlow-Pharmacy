@@ -1,6 +1,7 @@
 import { nhisDuplicateMemberKey, isVoidedNhisClaim } from '../utils/nhisCccDuplicate'
 import { assertNhisDurationForSavedState } from '../../local-branch-server/src/nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress, getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
+import { buildNhisEarlyRefillReleaseSummary, splitNhisEarlyRefillAlerts } from '../utils/nhisEarlyRefillExportPolicy'
 import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry, withStorageUploadSession } from '../lib/supabase'
 import { getExportSigningEvidence, recordCxfExport } from './claimitLifecycleService'
 import { canonicalizeBundle } from '../claimit/fieldOrder'
@@ -1414,30 +1415,32 @@ const _assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
   }
 }
 
-// Duplicate exports remain blocked unless the organization explicitly enables
-// the opt-in policy. A missing/unavailable policy is fail-closed.
-export const getNhisDuplicateExportPolicy = async (organizationId) => {
+// NHIS-007: "early refill review" export blockers stay blocked unless an
+// organization administrator explicitly enables the policy. A missing or
+// unavailable policy is fail-closed. Duplicate exports are no longer governed by
+// an organization policy: duplicate groups always require the per-group review.
+export const getNhisEarlyRefillExportPolicy = async (organizationId) => {
   const orgId = normalizeText(organizationId)
-  if (!orgId || !supabase) return { organization_id: orgId, allow_duplicate_exports: false }
+  if (!orgId || !supabase) return { organization_id: orgId, allow_early_refill_exports: false }
   try {
-    const { data, error } = await supabase.rpc('get_nhis_duplicate_export_policy', { p_org: orgId })
+    const { data, error } = await supabase.rpc('get_nhis_early_refill_export_policy', { p_org: orgId })
     if (error) throw error
-    return data || { organization_id: orgId, allow_duplicate_exports: false }
+    return data || { organization_id: orgId, allow_early_refill_exports: false }
   } catch (error) {
-    console.warn('[NHIS] Duplicate export policy unavailable; keeping duplicates blocked.', error)
-    return { organization_id: orgId, allow_duplicate_exports: false, unavailable: true }
+    console.warn('[NHIS] Early refill export policy unavailable; keeping early refill claims blocked.', error)
+    return { organization_id: orgId, allow_early_refill_exports: false, unavailable: true }
   }
 }
 
-export const saveNhisDuplicateExportPolicy = async (organizationId, allowDuplicateExports) => {
+export const saveNhisEarlyRefillExportPolicy = async (organizationId, allowEarlyRefillExports) => {
   const orgId = normalizeText(organizationId)
-  if (!orgId || !supabase) throw new Error('An organization is required to change duplicate export policy.')
-  const { data, error } = await supabase.rpc('save_nhis_duplicate_export_policy', {
+  if (!orgId || !supabase) throw new Error('An organization is required to change early refill export policy.')
+  const { data, error } = await supabase.rpc('save_nhis_early_refill_export_policy', {
     p_org: orgId,
-    p_allow_duplicate_exports: Boolean(allowDuplicateExports),
+    p_allow_early_refill_exports: Boolean(allowEarlyRefillExports),
   })
   if (error) throw error
-  return data || { organization_id: orgId, allow_duplicate_exports: Boolean(allowDuplicateExports) }
+  return data || { organization_id: orgId, allow_early_refill_exports: Boolean(allowEarlyRefillExports) }
 }
 
 const DIAGNOSIS_TREATMENT_RULES = [
@@ -5446,9 +5449,24 @@ const getNhisExportActiveMedicationBlockers = async (claims = [], options = {}) 
       .map((claim) => {
         const alerts = alertsByClaimId.get(normalizeText(claim.id)) || []
         if (!alerts.length) return null
+        // NHIS-007: an administrator may release "early refill review" alerts only; every
+        // other alert type keeps blocking the claim.
+        const { blocking, released } = splitNhisEarlyRefillAlerts(alerts, {
+          allow: options.allowEarlyRefillExports,
+        })
+        if (released.length && Array.isArray(options.releasedEarlyRefillAlerts)) {
+          released.forEach((alert) => {
+            options.releasedEarlyRefillAlerts.push({
+              claimId: normalizeText(claim.id),
+              claimNumber: normalizeText(claim.claim_number || claim.claimNumber),
+              medicine: normalizeText(alert.medicine_description || alert.medicine_code),
+            })
+          })
+        }
+        if (!blocking.length) return null
         return summarizeNhisReadinessClaim(
           claim,
-          alerts.map(formatNhisActiveMedicationExportBlocker)
+          blocking.map(formatNhisActiveMedicationExportBlocker)
         )
       })
       .filter(Boolean)
@@ -10613,14 +10631,18 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     !exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
   )
   const organizationType = normalizeOrganizationType(options.organizationType)
-  const duplicateExportPolicy = await getNhisDuplicateExportPolicy(
+  const earlyRefillExportPolicy = await getNhisEarlyRefillExportPolicy(
     options.organizationId || options.organization_id
   )
+  const releasedEarlyRefillAlerts = []
   const blockerOptions = {
     ...options,
     format,
     directSubmit,
     exportPeriod: period,
+    // NHIS-007: collected while blockers are evaluated, audited at export time.
+    allowEarlyRefillExports: earlyRefillExportPolicy.allow_early_refill_exports === true,
+    releasedEarlyRefillAlerts,
   }
   const allDuplicateGroups = buildNhisDuplicateClaimGroups(claims)
   const { blocking: duplicateGroups, reviewed: reviewedDuplicateGroups } = allDuplicateGroups.length
@@ -10651,8 +10673,11 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     organizationType,
     duplicateGroups,
     reviewedDuplicateGroups,
-    duplicateExportsAllowed: duplicateExportPolicy.allow_duplicate_exports === true,
-    duplicateExportPolicy,
+    // Duplicate groups are always blocked pending the per-group review.
+    duplicateExportsAllowed: false,
+    earlyRefillExportsAllowed: earlyRefillExportPolicy.allow_early_refill_exports === true,
+    earlyRefillExportPolicy,
+    releasedEarlyRefillClaims: buildNhisEarlyRefillReleaseSummary(releasedEarlyRefillAlerts),
     exportBlockingIssues,
   }
 }

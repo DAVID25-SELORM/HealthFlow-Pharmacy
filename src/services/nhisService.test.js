@@ -7953,3 +7953,186 @@ describe('reviewed NHIS duplicate groups', () => {
     await expect(listActiveNhisDuplicateReviews(ORG)).rejects.toThrow(/permission denied/)
   })
 })
+
+describe('early refill export policy (NHIS-007)', () => {
+  const ORG = '22222222-2222-4222-8222-222222222222'
+  const claimId = '11111111-1111-4111-8111-111111111111'
+
+  const buildClaim = () => ({
+    id: claimId,
+    claim_number: 'NHIS-000011',
+    status: 'served',
+    organization_id: ORG,
+    organization_type: 'hospital',
+    member_no: '12345678',
+    surname: 'Mensah',
+    other_names: 'Ama',
+    folder_no: 'F001',
+    date_of_birth: '1990-01-01',
+    patient_address: 'Accra',
+    ccc_no: '12345',
+    diagnosis: 'Malaria',
+    diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    service_date_from: '2026-05-14',
+    service_date_to: '2026-05-14',
+    referring_facility: 'Westpoint Hospital',
+    physician_name: 'Dr Test',
+    total_amount: 10,
+    nhis_claim_medicines: [{
+      nhis_drug_id: 'drug-1',
+      drug_code: 'AL20',
+      description: 'Artemether/Lumefantrine Tablet',
+      generic_name: 'Artemether Lumefantrine',
+      unit: 'tablet',
+      unit_price: 1,
+      dispensed_qty: 10,
+      dose: '1 tablet',
+      frequency: 'BD',
+      duration: '5 days',
+      total_amount: 10,
+      category: 'A',
+    }],
+  })
+
+  const alertOf = (matchType) => ({
+    input_claim_id: claimId,
+    severity: 'warning',
+    match_type: matchType,
+    medicine_code: 'AL20',
+    medicine_description: 'Artemether/Lumefantrine Tablet',
+    previous_dispensed_date: '2026-05-10',
+    coverage_end_date: '2026-05-14',
+    remaining_days: 4,
+    source_label: 'This HealthFlow facility',
+    previous_quantity_supplied: 10,
+    previous_dose: '1 tablet',
+    previous_frequency: 'BD',
+    calculated_administrations_per_day: 2,
+    calculated_treatment_days: 5,
+    risk_score: 70,
+    recommended_action: 'Confirm refill reason before export.',
+  })
+
+  const exportOptions = {
+    mode: 'custom',
+    fromDate: '2026-05-14',
+    toDate: '2026-05-14',
+    format: 'json',
+    organizationType: 'hospital',
+    providerClassLevel: 'D',
+    pharmacyLevel: 'P1',
+    nhisDrugCatalog: [{ id: 'drug-1', code: 'AL20', category: 'A' }],
+    organizationId: ORG,
+  }
+
+  const setUp = ({ policy, alerts }) => {
+    const claimsQuery = {
+      eq: vi.fn(() => claimsQuery),
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [buildClaim()], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockReset()
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    supabase.rpc.mockReset()
+    supabase.rpc.mockImplementation(async (name) => {
+      if (name === 'get_nhis_early_refill_export_policy') return policy
+      if (name === 'check_nhis_active_medication_overlap_batch') return { data: alerts, error: null }
+      return { data: null, error: null }
+    })
+  }
+
+  const policyOf = (allow) => ({ data: { organization_id: ORG, allow_early_refill_exports: allow }, error: null })
+
+  const readinessIssuesOf = async () => {
+    try {
+      await checkNhisExportReadiness(exportOptions)
+    } catch (error) {
+      return error
+    }
+    return null
+  }
+
+  it('keeps an early refill review alert blocking export while the policy is off', async () => {
+    setUp({ policy: policyOf(false), alerts: [alertOf('early_refill_review')] })
+
+    const error = await readinessIssuesOf()
+
+    expect(error).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
+    expect(error.readinessIssues[0].issues.join(' ')).toContain('has early refill review')
+  })
+
+  it('releases a claim held back only by an early refill review alert when the administrator policy is on', async () => {
+    setUp({ policy: policyOf(true), alerts: [alertOf('early_refill_review')] })
+
+    await expect(checkNhisExportReadiness(exportOptions)).resolves.toMatchObject({ count: 1 })
+
+    const readiness = await prepareNhisClaimsExport(exportOptions)
+    expect(readiness.earlyRefillExportsAllowed).toBe(true)
+    expect(readiness.exportBlockingIssues).toEqual([])
+    expect(readiness.releasedEarlyRefillClaims).toMatchObject({
+      claim_count: 1,
+      claims: [expect.objectContaining({ claim_number: 'NHIS-000011', medicines: ['Artemether/Lumefantrine Tablet'] })],
+    })
+  })
+
+  it.each(['possible_completion_supply', 'partial_previous_supply', 'same_ingredient', 'exact_code'])(
+    'still blocks a %s alert even when the early refill policy is on',
+    async (matchType) => {
+      setUp({ policy: policyOf(true), alerts: [alertOf(matchType)] })
+
+      const error = await readinessIssuesOf()
+
+      expect(error).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
+    }
+  )
+
+  it('releases only the early refill review alert when a claim also has another alert type', async () => {
+    setUp({ policy: policyOf(true), alerts: [alertOf('early_refill_review'), alertOf('possible_completion_supply')] })
+
+    const error = await readinessIssuesOf()
+
+    expect(error).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
+    const issueText = error.readinessIssues[0].issues.join(' ')
+    expect(issueText).toContain('has possible completion supply')
+    expect(issueText).not.toContain('has early refill review')
+
+    const readiness = await prepareNhisClaimsExport(exportOptions)
+    expect(readiness.exportBlockingIssues.length).toBeGreaterThan(0)
+    expect(readiness.releasedEarlyRefillClaims.claim_count).toBe(1)
+  })
+
+  it('fails closed when the policy cannot be read', async () => {
+    setUp({ policy: { data: null, error: { message: 'function public.get_nhis_early_refill_export_policy does not exist' } }, alerts: [alertOf('early_refill_review')] })
+
+    const error = await readinessIssuesOf()
+
+    expect(error).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
+    expect(error.readinessIssues[0].issues.join(' ')).toContain('has early refill review')
+  })
+
+  it('no longer lets an organization policy release duplicate claims', async () => {
+    setUp({ policy: policyOf(true), alerts: [] })
+
+    const readiness = await prepareNhisClaimsExport(exportOptions)
+
+    expect(readiness.duplicateExportsAllowed).toBe(false)
+    expect(supabase.rpc).not.toHaveBeenCalledWith('get_nhis_duplicate_export_policy', expect.anything())
+  })
+})
