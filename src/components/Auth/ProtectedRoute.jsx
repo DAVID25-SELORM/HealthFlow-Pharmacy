@@ -30,7 +30,7 @@ const ProtectedRoute = ({ children }) => {
       <div role="alert" style={{ padding: '2rem', maxWidth: '640px' }}>
         <h2>Unable to load workspace</h2>
         <p>{profileLoadError}</p>
-        <button type="button" onClick={() => window.dispatchEvent(new Event('healthflow:retry-workspace'))}>Retry loading</button>
+        <button type="button" className="btn btn-primary" onClick={() => window.dispatchEvent(new Event('healthflow:retry-workspace'))}>Retry loading</button>
       </div>
     )
   }
@@ -50,7 +50,7 @@ const ProtectedRoute = ({ children }) => {
           This pharmacy workspace is currently {billingStatus || organizationStatus}. Contact
           your platform administrator to reactivate access.
         </p>
-        <button type="button" onClick={() => void signOut()}>
+        <button type="button" className="btn btn-secondary" onClick={() => void signOut()}>
           Sign out
         </button>
       </div>

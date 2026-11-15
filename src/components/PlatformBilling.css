@@ -11,6 +11,10 @@
 .platform-billing button { padding:.65rem 1rem; border:1px solid #c6d9d5; border-radius:8px; font:inherit; font-size:.85rem; font-weight:600; cursor:pointer; background:#f1f8f6; color:#176456; }
 .platform-billing button.billing-primary { background:#147d6c; border-color:#147d6c; color:#fff; }
 .platform-billing button:hover { filter:brightness(.95); }
+.platform-billing a.billing-link { display:inline-flex; align-items:center; justify-content:center; padding:.65rem 1rem; border:1px solid #147d6c; border-radius:8px; background:#147d6c; color:#fff; font:inherit; font-size:.85rem; font-weight:600; line-height:1.2; text-decoration:none; cursor:pointer; }
+.platform-billing a.billing-link:hover { filter:brightness(.95); }
+.platform-billing a.billing-link:focus-visible { outline:3px solid #55bfae; outline-offset:2px; }
+.dashboard-bills a.billing-link { margin-top:.25rem; }
 .platform-billing button:disabled { opacity:.55; cursor:wait; }
 .platform-billing :is(button,input,select):focus-visible { outline:3px solid #55bfae; outline-offset:2px; }
 .billing-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin:1.5rem 0 1rem; }

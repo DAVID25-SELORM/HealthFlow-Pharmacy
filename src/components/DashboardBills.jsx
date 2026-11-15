@@ -35,7 +35,7 @@ export default function DashboardBills() {
         <strong>{bill.kind === 'onboarding' ? 'Onboarding fee' : `Subscription — ${bill.period.slice(0, 7)}`}: {money(bill.amount)}</strong>
         <p>Due {bill.due_on}{bill.awaiting_confirmation ? ' · Payment awaiting confirmation' : ' · Unpaid'}</p>
       </article>)}
-      {canManage ? <Link to="/billing">View bills / Pay</Link> : <p>Contact your facility administrator to arrange payment.</p>}
+      {canManage ? <Link className="billing-link" to="/billing">View bills / Pay</Link> : <p>Contact your facility administrator to arrange payment.</p>}
     </>}
   </section>
 }
