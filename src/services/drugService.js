@@ -517,9 +517,23 @@ export const searchDrugs = async (searchTerm, options = {}) => {
 }
 
 // Get low stock drugs
-export const getLowStockDrugs = async ({ force = false } = {}) => {
+// `branchId` limits the alerts to one branch (BRANCH-001). The database views behind the organisation-wide
+// alerts carry no branch, so a branch is read through the branch-aware inventory call and filtered here.
+const isLowStockDrug = (drug) =>
+  Number.parseFloat(drug?.quantity ?? 0) <= Number.parseFloat(drug?.reorder_level ?? drug?.reorderLevel ?? 10)
+
+const isExpiringSoonDrug = (drug, today = new Date()) => {
+  if (!drug?.expiry_date) return false
+  const soon = new Date(today)
+  soon.setDate(soon.getDate() + 30)
+  const expiry = new Date(drug.expiry_date)
+  return expiry >= today && expiry <= soon
+}
+
+export const getLowStockDrugs = async ({ force = false, branchId = '' } = {}) => {
+  const scopedBranchId = normalizeText(branchId)
   // ✅ OFFLINE-FIRST PATCH START
-  return await getCachedInventoryAlert('low-stock', async () => await routeRead({
+  return await getCachedInventoryAlert(`low-stock:${scopedBranchId || 'all'}`, async () => await routeRead({
     label: 'low stock alerts',
     local: async () => {
       const rows = await getBranchInventory({ limit: 20000 })
@@ -529,6 +543,11 @@ export const getLowStockDrugs = async ({ force = false } = {}) => {
       )
     },
     cloud: async () => {
+      if (scopedBranchId) {
+        const rows = await getAllDrugsViaTierAccess(false, scopedBranchId)
+        return rows.filter((drug) => shouldAlertForDrug(drug) && isLowStockDrug(drug))
+      }
+
       const { data, error } = await supabase
         .from('low_stock_drugs')
         .select('*')
@@ -542,9 +561,10 @@ export const getLowStockDrugs = async ({ force = false } = {}) => {
 }
 
 // Get expiring drugs (within 30 days)
-export const getExpiringDrugs = async ({ force = false } = {}) => {
+export const getExpiringDrugs = async ({ force = false, branchId = '' } = {}) => {
+  const scopedBranchId = normalizeText(branchId)
   // ✅ OFFLINE-FIRST PATCH START
-  return await getCachedInventoryAlert('expiring', async () => await routeRead({
+  return await getCachedInventoryAlert(`expiring:${scopedBranchId || 'all'}`, async () => await routeRead({
     label: 'expiring inventory alerts',
     local: async () => {
       const today = new Date()
@@ -557,6 +577,11 @@ export const getExpiringDrugs = async ({ force = false } = {}) => {
       })
     },
     cloud: async () => {
+      if (scopedBranchId) {
+        const rows = await getAllDrugsViaTierAccess(false, scopedBranchId)
+        return rows.filter((drug) => shouldAlertForDrug(drug) && isExpiringSoonDrug(drug))
+      }
+
       const { data, error } = await supabase
         .from('expiring_soon_drugs')
         .select('*')
