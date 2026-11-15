@@ -45,9 +45,9 @@ export default function NhisExportBlockerClaims({ issue, onView, onEdit }) {
           })}</tbody>
         </table>
       </div>
-      {filtered.length > PAGE_SIZE && <div>
-        <button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous claims</button>
-        <button type="button" disabled={start + PAGE_SIZE >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next claims</button>
+      {filtered.length > PAGE_SIZE && <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+        <button type="button" className="btn btn-secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous claims</button>
+        <button type="button" className="btn btn-secondary" disabled={start + PAGE_SIZE >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next claims</button>
       </div>}
     </details>
   )
