@@ -468,7 +468,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
             ) : (
               <span className="user-role">{getRoleLabel(role)}</span>
             )}
-            {branch && <span className="branch-topbar-badge">{branch.name}</span>}
+            {branch && <span className="branch-topbar-badge" title={`Branch: ${branch.name}`}>{branch.name}</span>}
           </div>
           <button className="notification-btn" type="button" onClick={handleLogout} title="Sign out">
             <LogOut size={16} />

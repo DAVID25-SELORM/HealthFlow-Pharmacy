@@ -288,7 +288,7 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 
 const Dashboard = () => {
   const navigate = useNavigate()
-  const { role, displayName, canManageInventory, canManageClaims, canManagePurchases } = useAuth()
+  const { role, displayName, branch, canManageInventory, canManageClaims, canManagePurchases } = useAuth()
   const {
     tierLimits,
     organization,
@@ -712,6 +712,7 @@ const Dashboard = () => {
           <div className="hero-meta">
             <span className="hero-chip">{fullDateFormatter.format(new Date())}</span>
             <span className="hero-chip">{roleLabel}</span>
+            {branch?.name && <span className="hero-chip" title="Your branch">Branch: {branch.name}</span>}
             <span className="hero-chip">{planLabel} Plan</span>
             {isTrialActive && <span className="hero-chip">{formatTrialLabel(daysUntilTrialExpires)}</span>}
             {isSuspended && <span className="hero-chip hero-chip-danger">Suspended</span>}

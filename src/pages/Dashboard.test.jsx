@@ -98,6 +98,18 @@ describe('Dashboard', () => {
     expect(screen.getByText('No claims yet')).toBeInTheDocument()
   })
 
+  it('shows the branch of a member of staff who belongs to one, and nothing for staff without a branch', async () => {
+    mocks.useAuth.mockReturnValue({ role: 'branch_manager', branch: { id: 'b1', name: 'SELORM LAPAZ' } })
+    const { unmount } = render(<Dashboard />)
+    expect(await screen.findByText('Branch: SELORM LAPAZ')).toBeInTheDocument()
+    unmount()
+
+    mocks.useAuth.mockReturnValue({ role: 'admin', branch: null })
+    render(<Dashboard />)
+    await screen.findByText(/Welcome back/)
+    expect(screen.queryByText(/^Branch:/)).toBeNull()
+  })
+
   it('buckets sales into the correct local day for the daily chart', async () => {
     mocks.getAllSales.mockResolvedValue([
       {
