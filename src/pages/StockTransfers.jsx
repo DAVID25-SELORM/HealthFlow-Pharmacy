@@ -13,11 +13,19 @@ import {
   needsMyAction,
   summarizeTransfer,
 } from '../services/branchTransferService'
+import {
+  canAskForStock,
+  listBranchStockRequests,
+  requestNeedsMyAction,
+} from '../services/branchStockRequestService'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import { formatAppDateTime } from '../utils/date'
 import NewTransferModal from '../components/transfers/NewTransferModal'
 import TransferDetailModal from '../components/transfers/TransferDetailModal'
 import AddBranchModal from '../components/transfers/AddBranchModal'
+import NewStockRequestModal from '../components/transfers/NewStockRequestModal'
+import StockRequestDetailModal from '../components/transfers/StockRequestDetailModal'
+import StockRequestsPanel from '../components/transfers/StockRequestsPanel'
 import './StockTransfers.css'
 
 const FILTERS = [
@@ -42,13 +50,25 @@ function StockTransfers() {
   const [showNew, setShowNew] = useState(false)
   const [showAddBranch, setShowAddBranch] = useState(false)
   const [openId, setOpenId] = useState(null)
+  const [view, setView] = useState('transfers') // transfers | requests
+  const [requests, setRequests] = useState([])
+  const [requestsError, setRequestsError] = useState('')
+  const [showRequest, setShowRequest] = useState(false)
+  const [openRequestId, setOpenRequestId] = useState(null)
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const [transferRows, branchRows] = await Promise.all([listBranchTransfers(), getBranches()])
+      // Stock requests never get in the way of transfers: if they cannot load, only that tab says so.
+      const [transferRows, branchRows, requestOutcome] = await Promise.all([
+        listBranchTransfers(),
+        getBranches(),
+        listBranchStockRequests().then((rows) => ({ rows }), (requestError) => ({ error: requestError })),
+      ])
       setTransfers(transferRows)
       setBranches(branchRows)
+      setRequests(requestOutcome.rows || [])
+      setRequestsError(requestOutcome.error ? (requestOutcome.error.message || 'Unable to load stock requests.') : '')
     } catch (loadError) {
       setError(loadError.message || 'Unable to load stock transfers.')
     } finally {
@@ -65,6 +85,8 @@ function StockTransfers() {
   const activeBranches = branches.filter((row) => row.is_active !== false)
   const canStartTransfer = activeBranches.some((row) => canSendFromBranch(actor, row.id)) && activeBranches.length >= 2
   const mayAddBranch = actor.isAdmin || actor.isManager
+  const mayAskForStock = canAskForStock(actor) && activeBranches.some((row) => row.id !== actor.branchId)
+  const requestsNeedingMe = requests.filter((row) => requestNeedsMyAction(actor, row)).length
   const branchesLocked = !canUseMultiBranch && activeBranches.length >= 1
 
   const counts = useMemo(() => ({
@@ -87,6 +109,7 @@ function StockTransfers() {
   }, [transfers, filter, query, actor, branchName])
 
   const opened = transfers.find((row) => row.id === openId) || null
+  const openedRequest = requests.find((row) => row.id === openRequestId) || null
   const facility = {
     name: organization?.name, address: organization?.address, city: organization?.city,
     region: organization?.region, phone: organization?.phone, email: organization?.email,
@@ -98,6 +121,28 @@ function StockTransfers() {
     dispatchHealthflowDataChanged()
     await load()
     setOpenId(result.transfer_id)
+  }
+
+  const afterRequestSent = async (result, sourceName) => {
+    setShowRequest(false)
+    notify(`${result.request_number} sent to ${sourceName}. They will approve or decline it.`, 'success')
+    await load()
+    setView('requests')
+    setOpenRequestId(result.request_id)
+  }
+
+  const afterRequestResolved = async (result) => {
+    setOpenRequestId(null)
+    if (result.status === 'approved') {
+      notify(`${result.request_number} approved. ${result.transfer_number} is on its way and the asking branch must confirm receipt.`, 'success')
+      dispatchHealthflowDataChanged()
+      await load()
+      setView('transfers')
+      setOpenId(result.transfer_id)
+      return
+    }
+    notify(`${result.request_number} ${result.status}.`, 'success')
+    await load()
   }
 
   const afterResolved = async (result) => {
@@ -128,6 +173,11 @@ function StockTransfers() {
               <Plus size={16} /> Add branch
             </button>
           )}
+          {mayAskForStock && (
+            <button type="button" className="btn btn-outline" onClick={() => setShowRequest(true)}>
+              <Plus size={16} /> Request stock
+            </button>
+          )}
           {canStartTransfer && (
             <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
               <Plus size={16} /> New transfer
@@ -151,7 +201,27 @@ function StockTransfers() {
         </div>
       )}
 
-      {transfers.length > 0 && (
+      {activeBranches.length >= 2 && (
+        <div className="stx-filters stx-views" role="tablist" aria-label="Transfers or requests">
+          <button type="button" role="tab" aria-selected={view === 'transfers'}
+            className={`stx-chip${view === 'transfers' ? ' is-active' : ''}`} onClick={() => setView('transfers')}>
+            Transfers <span>{transfers.length}</span>
+          </button>
+          <button type="button" role="tab" aria-selected={view === 'requests'}
+            className={`stx-chip${view === 'requests' ? ' is-active' : ''}`} onClick={() => setView('requests')}>
+            Stock requests <span>{requestsNeedingMe > 0 ? `${requestsNeedingMe} to decide` : requests.length}</span>
+          </button>
+        </div>
+      )}
+
+      {view === 'requests' && activeBranches.length >= 2 && (
+        <StockRequestsPanel
+          requests={requests} branchName={branchName} actor={actor} error={requestsError}
+          canAsk={mayAskForStock} onOpen={setOpenRequestId}
+        />
+      )}
+
+      {(view === 'transfers' || activeBranches.length < 2) && transfers.length > 0 && (
         <div className="stx-toolbar">
           <div className="stx-filters" role="tablist" aria-label="Transfer status">
             {FILTERS.map((item) => (
@@ -170,7 +240,7 @@ function StockTransfers() {
         </div>
       )}
 
-      {loading ? (
+      {(view === 'requests' && activeBranches.length >= 2) ? null : loading ? (
         <div className="stx-empty">Loading transfers...</div>
       ) : transfers.length === 0 ? (
         activeBranches.length >= 2 && (
@@ -219,6 +289,16 @@ function StockTransfers() {
             notify(`Branch "${branch?.name || 'New branch'}" created.`, 'success')
             await load()
           }}
+        />
+      )}
+      {showRequest && (
+        <NewStockRequestModal branches={branches} actor={actor} onClose={() => setShowRequest(false)} onSent={afterRequestSent} />
+      )}
+      {openedRequest && (
+        <StockRequestDetailModal
+          key={`${openedRequest.id}:${openedRequest.status}`}
+          request={openedRequest} branchName={branchName} actor={actor}
+          onClose={() => setOpenRequestId(null)} onChanged={afterRequestResolved}
         />
       )}
       {opened && (

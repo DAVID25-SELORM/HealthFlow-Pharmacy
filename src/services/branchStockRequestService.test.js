@@ -1,0 +1,183 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { rpc, from } = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }))
+
+vi.mock('../lib/supabase', () => ({ supabase: { rpc, from } }))
+
+import {
+  approveBranchStockRequest,
+  canAskForStock,
+  canCancelRequest,
+  canDecideRequest,
+  cancelBranchStockRequest,
+  createBranchStockRequest,
+  declineBranchStockRequest,
+  listBranchStockRequests,
+  requestNeedsMyAction,
+  searchBranchStockForRequest,
+  summarizeRequest,
+} from './branchStockRequestService'
+import { describeActor } from './branchTransferService'
+
+const query = (result) => {
+  const stub = {}
+  ;['select', 'order', 'limit', 'eq', 'in'].forEach((name) => { stub[name] = vi.fn(() => stub) })
+  stub.then = (resolve, reject) => Promise.resolve(result).then(resolve, reject)
+  return stub
+}
+
+const request = (overrides = {}) => ({
+  id: 'r1',
+  status: 'pending',
+  requesting_branch_id: 'b1',
+  source_branch_id: 'main',
+  created_by: 'asker',
+  items: [
+    { id: 'i1', medicine_name: 'Paracetamol', quantity_requested: '40.00', quantity_approved: null },
+    { id: 'i2', medicine_name: 'Amoxicillin', quantity_requested: '5.00', quantity_approved: null },
+  ],
+  ...overrides,
+})
+
+const admin = describeActor({ role: 'admin', profile: { id: 'a1', branch_id: null } })
+const mainPharmacist = describeActor({ role: 'pharmacist', profile: { id: 'p1', branch_id: 'main' } })
+const lapazManager = describeActor({ role: 'branch_manager', profile: { id: 'm1', branch_id: 'b1' } })
+const lapazPharmacist = describeActor({ role: 'pharmacist', profile: { id: 'p2', branch_id: 'b1' } })
+const temaManager = describeActor({ role: 'branch_manager', profile: { id: 'm2', branch_id: 'b2' } })
+const orgStaff = describeActor({ role: 'pharmacist', profile: { id: 'p3', branch_id: null } })
+
+describe('branchStockRequestService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    rpc.mockResolvedValue({ data: { request_id: 'r1', request_number: 'REQ-000001', status: 'pending' }, error: null })
+  })
+
+  it('sends a request with validated lines', async () => {
+    await createBranchStockRequest({
+      sourceBranchId: ' main ',
+      requestingBranchId: 'b1',
+      items: [{ drugId: 'd1', quantity: '40' }, { drugId: 'd2', quantity: '2.5' }],
+      notes: '  Weekend  ',
+    })
+    expect(rpc).toHaveBeenCalledWith('create_branch_stock_request', {
+      p_source_branch_id: 'main',
+      p_requesting_branch_id: 'b1',
+      p_items: [{ drug_id: 'd1', quantity: '40' }, { drug_id: 'd2', quantity: '2.5' }],
+      p_notes: 'Weekend',
+    })
+  })
+
+  it('refuses bad requests before calling the database', async () => {
+    const base = { sourceBranchId: 'main', requestingBranchId: 'b1', items: [{ drugId: 'd1', quantity: '1' }] }
+    await expect(createBranchStockRequest({ ...base, sourceBranchId: '' })).rejects.toThrow('Choose the branch you are asking')
+    await expect(createBranchStockRequest({ ...base, requestingBranchId: 'main' })).rejects.toThrow('two different branches')
+    await expect(createBranchStockRequest({ ...base, items: [] })).rejects.toThrow('at least one medicine')
+    await expect(createBranchStockRequest({ ...base, items: [{ drugId: 'd1', quantity: '0' }] })).rejects.toThrow('above zero')
+    await expect(createBranchStockRequest({ ...base, items: [{ drugId: 'd1', quantity: '1.234' }] })).rejects.toThrow('2 decimals')
+    await expect(createBranchStockRequest({ ...base, items: [{ drugId: '', quantity: '1' }] })).rejects.toThrow('choose a medicine')
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('searches only after two characters and returns an empty list otherwise', async () => {
+    expect(await searchBranchStockForRequest({ sourceBranchId: 'main', term: 'p' })).toEqual([])
+    expect(rpc).not.toHaveBeenCalled()
+    rpc.mockResolvedValueOnce({ data: [{ id: 'd1', name: 'Paracetamol' }], error: null })
+    const rows = await searchBranchStockForRequest({ sourceBranchId: 'main', term: ' para ', limit: 5 })
+    expect(rows).toEqual([{ id: 'd1', name: 'Paracetamol' }])
+    expect(rpc).toHaveBeenCalledWith('search_branch_stock_for_request', { p_source_branch_id: 'main', p_term: 'para', p_limit: 5 })
+  })
+
+  it('approves every line as asked, or with lowered and dropped quantities', async () => {
+    await approveBranchStockRequest({ requestId: 'r1' })
+    expect(rpc).toHaveBeenLastCalledWith('approve_branch_stock_request', { p_request_id: 'r1', p_items: null, p_notes: null })
+    await approveBranchStockRequest({
+      requestId: 'r1',
+      lines: [{ itemId: 'i1', quantityApproved: '30' }, { itemId: 'i2', quantityApproved: '0' }],
+      notes: 'Only 30 spare',
+    })
+    expect(rpc).toHaveBeenLastCalledWith('approve_branch_stock_request', {
+      p_request_id: 'r1',
+      p_items: [{ item_id: 'i1', quantity_approved: '30' }, { item_id: 'i2', quantity_approved: '0' }],
+      p_notes: 'Only 30 spare',
+    })
+    await expect(approveBranchStockRequest({ requestId: 'r1', lines: [{ itemId: 'i1', quantityApproved: '-1' }] })).rejects.toThrow('zero or more')
+    await expect(approveBranchStockRequest({ requestId: '' })).rejects.toThrow('Choose a request')
+  })
+
+  it('needs a reason of at least 5 characters to decline or cancel', async () => {
+    await expect(declineBranchStockRequest({ requestId: 'r1', reason: 'no' })).rejects.toThrow('at least 5')
+    await expect(cancelBranchStockRequest({ requestId: 'r1', reason: '   ' })).rejects.toThrow('at least 5')
+    await declineBranchStockRequest({ requestId: 'r1', reason: ' Need it for Tema ' })
+    expect(rpc).toHaveBeenLastCalledWith('decline_branch_stock_request', { p_request_id: 'r1', p_reason: 'Need it for Tema' })
+    await cancelBranchStockRequest({ requestId: 'r1', reason: 'Ordered elsewhere' })
+    expect(rpc).toHaveBeenLastCalledWith('cancel_branch_stock_request', { p_request_id: 'r1', p_reason: 'Ordered elsewhere' })
+  })
+
+  it('surfaces the database message when the function refuses', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'Not enough Paracetamol in stock: 3 available, 5 requested.' } })
+    await expect(approveBranchStockRequest({ requestId: 'r1' })).rejects.toThrow('Not enough Paracetamol')
+  })
+
+  it('lists requests with their lines and the names of the people involved', async () => {
+    const requests = query({ data: [{ id: 'r1', created_by: 'u1', resolved_by: null, items: [{ medicine_name: 'Zinc' }, { medicine_name: 'Amoxicillin' }] }], error: null })
+    const users = query({ data: [{ id: 'u1', full_name: 'Kofi Boateng' }], error: null })
+    from.mockImplementation((table) => (table === 'branch_stock_requests' ? requests : users))
+    const [row] = await listBranchStockRequests()
+    expect(row.created_by_name).toBe('Kofi Boateng')
+    expect(row.resolved_by_name).toBe('')
+    expect(row.items.map((item) => item.medicine_name)).toEqual(['Amoxicillin', 'Zinc'])
+  })
+
+  it('reports a failed load, and still lists when the names cannot be read', async () => {
+    from.mockImplementation(() => query({ data: null, error: { message: 'relation does not exist' } }))
+    await expect(listBranchStockRequests()).rejects.toThrow('relation does not exist')
+    const requests = query({ data: [{ id: 'r1', created_by: 'u1', items: [] }], error: null })
+    const users = query({ data: null, error: { message: 'denied' } })
+    from.mockImplementation((table) => (table === 'branch_stock_requests' ? requests : users))
+    expect((await listBranchStockRequests())[0].created_by_name).toBe('')
+  })
+
+  it('totals a request', () => {
+    expect(summarizeRequest(request())).toEqual({ lines: 2, totalRequested: 45, totalApproved: 0 })
+    const approved = request({ status: 'approved', items: [{ quantity_requested: '40', quantity_approved: '30' }, { quantity_requested: '5', quantity_approved: '0' }] })
+    expect(summarizeRequest(approved).totalApproved).toBe(30)
+  })
+
+  describe('who sees which buttons', () => {
+    it('lets the asked branch, administrators and staff with no branch decide', () => {
+      expect(canDecideRequest(mainPharmacist, request())).toBe(true)
+      expect(canDecideRequest(admin, request())).toBe(true)
+      expect(canDecideRequest(orgStaff, request())).toBe(true)
+      expect(requestNeedsMyAction(mainPharmacist, request())).toBe(true)
+    })
+
+    it('does not let the asking branch, or another branch, decide', () => {
+      expect(canDecideRequest(lapazManager, request())).toBe(false)
+      expect(canDecideRequest(temaManager, request())).toBe(false)
+      expect(requestNeedsMyAction(lapazManager, request())).toBe(false)
+    })
+
+    it('stops everyone once the request is closed', () => {
+      for (const status of ['approved', 'declined', 'cancelled']) {
+        expect(canDecideRequest(admin, request({ status }))).toBe(false)
+        expect(canCancelRequest(admin, request({ status }))).toBe(false)
+      }
+    })
+
+    it('lets the asker, the asking branch manager and administrators cancel', () => {
+      expect(canCancelRequest(lapazPharmacist, request({ created_by: 'p2' }))).toBe(true)
+      expect(canCancelRequest(lapazManager, request())).toBe(true)
+      expect(canCancelRequest(admin, request())).toBe(true)
+      expect(canCancelRequest(lapazPharmacist, request())).toBe(false)
+      expect(canCancelRequest(temaManager, request())).toBe(false)
+      expect(canCancelRequest(mainPharmacist, request())).toBe(false)
+    })
+
+    it('shows Request stock to branch-bound staff only', () => {
+      expect(canAskForStock(lapazManager)).toBe(true)
+      expect(canAskForStock(mainPharmacist)).toBe(true)
+      expect(canAskForStock(admin)).toBe(false)
+      expect(canAskForStock(orgStaff)).toBe(false)
+    })
+  })
+})

@@ -123,3 +123,8 @@
   .stx-row-short td { background: transparent; }
   .stx-col-opt { display: table-cell !important; }
 }
+
+/* stock requests (BRANCH-003) */
+.stx-views { margin: 0.5rem 0 0.25rem; }
+.stx-badge--approved { background: #d8f3e3; color: #1b6e3f; }
+.stx-badge--declined { background: #fbe0dd; color: #a8281e; }
