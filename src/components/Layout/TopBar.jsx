@@ -6,12 +6,14 @@ import { subscribeToHealthflowDataChanged } from '../../lib/appEvents'
 import { useNotification } from '../../context/NotificationContext'
 import { useTenant } from '../../context/TenantContext'
 import { useBranchScope } from '../../hooks/useBranchScope'
+import { useStockWorkAlerts } from '../../hooks/useStockWorkAlerts'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
 import { subscribeSystemHealthPolling } from '../../services/systemHealthService'
 import { getActiveOrganizations } from '../../services/tierAccessService'
+import { describeActor } from '../../services/branchTransferService'
 import { formatActiveOrganizationsNotice } from '../../utils/organizationActivity'
 import {
   CONNECTIVITY_MODES,
@@ -65,13 +67,14 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
     assignedRoles = [],
     setActiveRole,
     branch,
+    profile,
     canManageInventory,
     canManageClaims,
     canViewReports,
     loading: authLoading,
     signOut,
   } = useAuth()
-  const { canUseClaims, tierLimits } = useTenant()
+  const { canUseClaims, canUseMultiBranch, tierLimits } = useTenant()
   // BRANCH-001: the alert bell counts the member of staff's own branch only.
   const branchScopeId = useBranchScope()
   const { notify } = useNotification()
@@ -87,6 +90,10 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const canUseClaimAlerts = canManageClaims || hasRole(role, CLAIMS_ROLES)
   const canViewSystemHealth = hasRole(role, SYSTEM_HEALTH_ROLES)
   const authReady = !authLoading && Boolean(role)
+  // Stock requests and transfers waiting for this person (Multi-branch pharmacies, inventory staff only).
+  const stockActor = useMemo(() => describeActor({ role, assignedRoles, profile }), [role, assignedRoles, profile])
+  const stockAlerts = useStockWorkAlerts({ enabled: authReady && canUseMultiBranch && canUseInventorySearch, actor: stockActor })
+  const bellAlerts = useMemo(() => [...alerts, ...stockAlerts], [alerts, stockAlerts])
   const searchTarget = '/search'
 
   useEffect(() => {
@@ -132,8 +139,8 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   }, [authReady, isOnline, notify, role, session?.user?.id, session?.user?.last_sign_in_at, user?.id, user?.last_sign_in_at])
 
   const notificationCount = useMemo(
-    () => alerts.filter((alert) => alert.count > 0).length,
-    [alerts]
+    () => bellAlerts.filter((alert) => alert.count > 0).length,
+    [bellAlerts]
   )
 
   const connectionLabel = useMemo(() => {
@@ -417,11 +424,11 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
                 navigate('/export-notifications')
                 setAlertsOpen(false)
               }}><span className="alerts-item-title">Claims exports: {exportAlertCount} unread</span><span className="alerts-item-description">View facility export notifications</span></button>}
-              {alerts.filter((alert) => alert.count > 0).length === 0 && exportAlertCount === 0 ? (
+              {bellAlerts.filter((alert) => alert.count > 0).length === 0 && exportAlertCount === 0 ? (
                 <p className="alerts-empty">No actionable alerts right now.</p>
               ) : (
                 <div className="alerts-list">
-                  {alerts
+                  {bellAlerts
                     .filter((alert) => alert.count > 0)
                     .map((alert) => (
                       <button

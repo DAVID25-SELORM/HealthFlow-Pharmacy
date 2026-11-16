@@ -156,5 +156,35 @@ export const canCancelRequest = (actor, request) =>
 
 export const requestNeedsMyAction = (actor, request) => canDecideRequest(actor, request)
 
+// What is waiting for this person, as two counts for the notification bell: requests they can decide
+// (the same people who can send from the asked branch) and transfers they can confirm (a manager of the
+// receiving branch, an administrator, or a manager with no branch). Counts only; any failure gives zeros
+// so the bell never breaks (for example if the request tables are not there yet).
+export const countStockWork = async (actor) => {
+  const none = { requestsToDecide: 0, transfersToConfirm: 0 }
+  if (!actor) return none
+  try {
+    const decidesAnywhere = actor.isAdmin || !actor.branchId
+    let requests = supabase.from('branch_stock_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+    if (!decidesAnywhere) requests = requests.eq('source_branch_id', actor.branchId)
+
+    const confirmsAnywhere = actor.isAdmin || (actor.isManager && !actor.branchId)
+    const confirmsOwn = actor.isManager && Boolean(actor.branchId)
+    let transfers = null
+    if (confirmsAnywhere || confirmsOwn) {
+      transfers = supabase.from('branch_stock_transfers').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      if (!confirmsAnywhere) transfers = transfers.eq('destination_branch_id', actor.branchId)
+    }
+
+    const [requestResult, transferResult] = await Promise.all([requests, transfers])
+    return {
+      requestsToDecide: requestResult?.error ? 0 : requestResult?.count || 0,
+      transfersToConfirm: transferResult?.error ? 0 : transferResult?.count || 0,
+    }
+  } catch {
+    return none
+  }
+}
+
 // Branch-bound staff who are not administrators ask for stock; everyone else simply sends a transfer.
 export const canAskForStock = (actor) => Boolean(actor?.branchId) && !actor.isAdmin

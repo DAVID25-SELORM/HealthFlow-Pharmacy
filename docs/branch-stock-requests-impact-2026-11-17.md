@@ -39,5 +39,5 @@ line; a failed approval rolls back completely; the approved transfer is confirme
 Unit tests cover the service, both modals and the page wiring.
 
 ## Not done
-- No notification is sent to the main store when a request arrives; they see it on the Stock Transfers page (the tab shows "n to decide").
+- ~~No notification~~ Added: the notification bell now shows "Stock requests to decide" (for people who can approve for a branch) and "Transfers to confirm" (for administrators and branch managers who can confirm receipt). Counts refresh every two minutes while the page is visible and whenever app data changes, so a request sent from another computer can take up to two minutes to appear. Only Multi-branch pharmacies and inventory staff run these queries; a failure leaves the bell as it was.
 - A request names specific batches. If the main store wants to send a different batch, they decline with a reason or send a New transfer.

@@ -50,7 +50,7 @@ function StockTransfers() {
   const [showNew, setShowNew] = useState(false)
   const [showAddBranch, setShowAddBranch] = useState(false)
   const [openId, setOpenId] = useState(null)
-  const [view, setView] = useState('transfers') // transfers | requests
+  const [view, setView] = useState(() => (new URLSearchParams(window.location.search).get('view') === 'requests' ? 'requests' : 'transfers')) // transfers | requests
   const [requests, setRequests] = useState([])
   const [requestsError, setRequestsError] = useState('')
   const [showRequest, setShowRequest] = useState(false)
@@ -126,6 +126,7 @@ function StockTransfers() {
   const afterRequestSent = async (result, sourceName) => {
     setShowRequest(false)
     notify(`${result.request_number} sent to ${sourceName}. They will approve or decline it.`, 'success')
+    dispatchHealthflowDataChanged()
     await load()
     setView('requests')
     setOpenRequestId(result.request_id)
@@ -142,6 +143,7 @@ function StockTransfers() {
       return
     }
     notify(`${result.request_number} ${result.status}.`, 'success')
+    dispatchHealthflowDataChanged()
     await load()
   }
 

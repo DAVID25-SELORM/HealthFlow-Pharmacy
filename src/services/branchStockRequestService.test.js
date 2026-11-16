@@ -10,6 +10,7 @@ import {
   canCancelRequest,
   canDecideRequest,
   cancelBranchStockRequest,
+  countStockWork,
   createBranchStockRequest,
   declineBranchStockRequest,
   listBranchStockRequests,
@@ -141,6 +142,53 @@ describe('branchStockRequestService', () => {
     expect(summarizeRequest(request())).toEqual({ lines: 2, totalRequested: 45, totalApproved: 0 })
     const approved = request({ status: 'approved', items: [{ quantity_requested: '40', quantity_approved: '30' }, { quantity_requested: '5', quantity_approved: '0' }] })
     expect(summarizeRequest(approved).totalApproved).toBe(30)
+  })
+
+  describe('countStockWork (the notification bell)', () => {
+    const counting = (results) => {
+      const calls = []
+      from.mockImplementation((table) => {
+        const stub = query(results[table] ?? { count: 0, error: null })
+        stub.table = table
+        calls.push(stub)
+        return stub
+      })
+      return calls
+    }
+
+    it('counts every pending request and transfer for an administrator', async () => {
+      const calls = counting({ branch_stock_requests: { count: 3, error: null }, branch_stock_transfers: { count: 2, error: null } })
+      expect(await countStockWork(admin)).toEqual({ requestsToDecide: 3, transfersToConfirm: 2 })
+      expect(calls.map((c) => c.table).sort()).toEqual(['branch_stock_requests', 'branch_stock_transfers'])
+      expect(calls.every((c) => c.eq.mock.calls.length === 1 && c.eq.mock.calls[0][0] === 'status')).toBe(true) // no branch filter
+    })
+
+    it('limits a branch manager to requests for their own branch and transfers arriving at it', async () => {
+      const calls = counting({ branch_stock_requests: { count: 1, error: null }, branch_stock_transfers: { count: 4, error: null } })
+      expect(await countStockWork(lapazManager)).toEqual({ requestsToDecide: 1, transfersToConfirm: 4 })
+      expect(calls.find((c) => c.table === 'branch_stock_requests').eq).toHaveBeenCalledWith('source_branch_id', 'b1')
+      expect(calls.find((c) => c.table === 'branch_stock_transfers').eq).toHaveBeenCalledWith('destination_branch_id', 'b1')
+    })
+
+    it('does not look for transfers to confirm for staff who are not managers', async () => {
+      const calls = counting({ branch_stock_requests: { count: 2, error: null } })
+      expect(await countStockWork(mainPharmacist)).toEqual({ requestsToDecide: 2, transfersToConfirm: 0 })
+      expect(calls.map((c) => c.table)).toEqual(['branch_stock_requests'])
+    })
+
+    it('treats staff with no branch as able to decide anywhere', async () => {
+      const calls = counting({ branch_stock_requests: { count: 5, error: null } })
+      expect((await countStockWork(orgStaff)).requestsToDecide).toBe(5)
+      expect(calls[0].eq).toHaveBeenCalledTimes(1)
+    })
+
+    it('gives zeros, never an error, when a query fails or throws', async () => {
+      counting({ branch_stock_requests: { count: null, error: { message: 'relation does not exist' } }, branch_stock_transfers: { count: 2, error: null } })
+      expect(await countStockWork(admin)).toEqual({ requestsToDecide: 0, transfersToConfirm: 2 })
+      from.mockImplementation(() => { throw new Error('boom') })
+      expect(await countStockWork(admin)).toEqual({ requestsToDecide: 0, transfersToConfirm: 0 })
+      expect(await countStockWork(null)).toEqual({ requestsToDecide: 0, transfersToConfirm: 0 })
+    })
   })
 
   describe('who sees which buttons', () => {

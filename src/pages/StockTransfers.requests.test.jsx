@@ -112,6 +112,18 @@ describe('StockTransfers: stock requests', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('branch_stock_requests')
   })
 
+  it('opens on the Stock requests tab when the bell link asks for it', async () => {
+    signIn('pharmacist', 'main')
+    window.history.pushState({}, '', '/stock-transfers?view=requests')
+    try {
+      render(<StockTransfers />)
+      expect(await screen.findByText('REQ-000001')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /Stock requests/ })).toHaveAttribute('aria-selected', 'true')
+    } finally {
+      window.history.pushState({}, '', '/')
+    }
+  })
+
   it('invites a branch manager to ask when there are no requests yet', async () => {
     signIn('branch_manager', 'b1')
     listBranchStockRequests.mockResolvedValue([])
