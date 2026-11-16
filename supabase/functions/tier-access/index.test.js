@@ -179,3 +179,48 @@ describe('tier-access NHIS price persistence', () => {
     expect(source).toContain('isBlankInput(row.nhis_price)')
   })
 })
+
+describe('tier-access branch scope (BRANCH-002)', () => {
+  it('fixes branch staff to their own branch for inventory, inventory sync and e-pharmacy orders', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+
+    expect(source).toContain('const requestedBranchForRequester = (requesterProfile: RequesterProfile, requestedBranchId: unknown) =>')
+    expect(source).toContain("if (ownBranchId && !requesterHasAnyRole(requesterProfile, ['admin', 'super_admin'])) return ownBranchId")
+    expect(source).toContain('const branchId = requestedBranchForRequester(requesterProfile, payload.branchId)')
+    expect(source).toContain('const explicitBranchId = requestedBranchForRequester(requesterProfile, payload.branchId)')
+    expect(source).toContain('const requestedBranchId = requestedBranchForRequester(requesterProfile, payload.buyerBranchId)')
+  })
+
+  it('no longer lets a requested branch id win over the user own branch', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+
+    expect(source).not.toContain('normalizeText(payload.branchId) || requesterProfile.branch_id')
+    expect(source).not.toContain('normalizeText(payload.buyerBranchId) || requesterProfile.branch_id')
+    expect(source).not.toContain('const branchId = requestedBranchId || requesterProfile.branch_id')
+  })
+
+  it('behaves as described: administrators may choose, branch staff may not', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const lfSource = source.replace(/\r\n/g, '\n')
+    const start = lfSource.indexOf('const requestedBranchForRequester')
+    const end = lfSource.indexOf('\n}\n', start) + 3
+    const helperSource = lfSource.slice(start, end)
+    expect(start).toBeGreaterThan(-1)
+    expect(helperSource.length).toBeGreaterThan(50)
+    const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
+    const requesterHasAnyRole = (profile, roles) => roles.some((role) => role === profile.role || (profile.assigned_roles || []).includes(role))
+    const requestedBranchForRequester = new Function(
+      'normalizeText', 'requesterHasAnyRole',
+      `${stripTypeScriptTypes(helperSource)}\nreturn requestedBranchForRequester`
+    )(normalizeText, requesterHasAnyRole)
+
+    expect(requestedBranchForRequester({ role: 'branch_manager', assigned_roles: ['branch_manager'], branch_id: 'b1' }, 'main')).toBe('b1')
+    expect(requestedBranchForRequester({ role: 'cashier', assigned_roles: ['cashier'], branch_id: 'b1' }, '')).toBe('b1')
+    expect(requestedBranchForRequester({ role: 'admin', assigned_roles: ['admin'], branch_id: 'b1' }, 'main')).toBe('main')
+    expect(requestedBranchForRequester({ role: 'admin', assigned_roles: ['admin'], branch_id: 'b1' }, '')).toBe('b1')
+    expect(requestedBranchForRequester({ role: 'super_admin', assigned_roles: [], branch_id: null }, 'any')).toBe('any')
+    expect(requestedBranchForRequester({ role: 'cashier', assigned_roles: ['cashier', 'admin'], branch_id: 'b1' }, 'main')).toBe('main')
+    expect(requestedBranchForRequester({ role: 'branch_manager', assigned_roles: ['branch_manager'], branch_id: null }, 'main')).toBe('main')
+    expect(requestedBranchForRequester({ role: 'branch_manager', assigned_roles: ['branch_manager'], branch_id: null }, '')).toBe('')
+  })
+})

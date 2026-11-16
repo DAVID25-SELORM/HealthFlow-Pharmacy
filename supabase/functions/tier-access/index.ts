@@ -940,6 +940,14 @@ const requesterHasAnyRole = (requesterProfile: RequesterProfile, roles: string[]
 const isSuperAdminRequester = (requesterProfile: RequesterProfile) =>
   requesterHasAnyRole(requesterProfile, ['super_admin'])
 
+// BRANCH-002: a member of staff who belongs to a branch is fixed to it. A branch id in the request is only
+// honoured for administrators and platform super administrators (and for staff with no branch).
+const requestedBranchForRequester = (requesterProfile: RequesterProfile, requestedBranchId: unknown) => {
+  const ownBranchId = normalizeText(requesterProfile.branch_id)
+  if (ownBranchId && !requesterHasAnyRole(requesterProfile, ['admin', 'super_admin'])) return ownBranchId
+  return normalizeText(requestedBranchId) || ownBranchId
+}
+
 const applyRequestedActiveRole = (
   requesterProfile: RequesterProfile,
   requestedRole: unknown
@@ -1521,8 +1529,7 @@ const getBranchIdForInventoryRequest = async (
   requesterProfile: RequesterProfile,
   payload: Record<string, unknown>
 ) => {
-  const requestedBranchId = normalizeText(payload.branchId)
-  const branchId = requestedBranchId || requesterProfile.branch_id
+  const branchId = requestedBranchForRequester(requesterProfile, payload.branchId)
 
   if (!branchId) {
     return null
@@ -1553,7 +1560,7 @@ const getBranchIdsForInventorySync = async (
   requesterProfile: RequesterProfile,
   payload: Record<string, unknown>
 ) => {
-  const explicitBranchId = normalizeText(payload.branchId) || requesterProfile.branch_id
+  const explicitBranchId = requestedBranchForRequester(requesterProfile, payload.branchId)
   if (explicitBranchId) {
     return [
       await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, payload),
@@ -2197,7 +2204,7 @@ const getBuyerBranchIdForEpharmacyOrder = async (
   requesterProfile: RequesterProfile,
   payload: Record<string, unknown>
 ) => {
-  const requestedBranchId = normalizeText(payload.buyerBranchId) || requesterProfile.branch_id
+  const requestedBranchId = requestedBranchForRequester(requesterProfile, payload.buyerBranchId)
   if (!requestedBranchId) return null
 
   const { data, error } = await adminClient

@@ -29,7 +29,11 @@ Stock search at the till, Inventory, Purchases, the Reorder Centre and server-si
   with no branch, so limiting its staff to a branch would have emptied their lists).
 - A new branch's Inventory says it has no stock yet and how stock arrives.
 
-## Not done, recommended next (needs a database or edge function release, so it needs your go-ahead)
+## Server-side enforcement (BRANCH-002, built 2026-11-16, applied only after approval)
+See `docs/branch-scope-server-side-impact-2026-11-16.md`. Row-level security, a refund guard and the edge function fix make the
+rule hold even for direct API calls. The older list below is what this closes.
+
+## Was open before BRANCH-002 (closed by it once applied)
 1. The scoping is in the app. A person who calls the database or the `tier-access` function directly can still ask for another
    branch (`get_drugs` honours a requested branch id ahead of the user's own; the stock and sales tables are readable
    organisation-wide). To make it a security boundary: make `get_drugs` ignore a requested branch for branch-bound staff, and
