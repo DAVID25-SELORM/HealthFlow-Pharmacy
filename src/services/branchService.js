@@ -28,6 +28,20 @@ export const getCurrentOrganizationId = async () => {
   return organizationId
 }
 
+// How many active branches the signed-in user's pharmacy has (row-level security limits the read to it).
+export const getActiveBranchCount = async () => {
+  const { count, error } = await supabase
+    .from('branches')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_active', true)
+
+  if (error) {
+    throw error
+  }
+
+  return Number(count || 0)
+}
+
 export const getUserBranchIdsByUserIds = async (userIds = []) => {
   const ids = [...new Set((userIds || []).filter(Boolean))]
   if (!ids.length) {

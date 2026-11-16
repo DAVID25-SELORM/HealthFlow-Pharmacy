@@ -22,7 +22,7 @@ import { getAllSales, getRecentSales } from '../services/salesService'
 import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
 import { useTenant } from '../context/TenantContext'
-import { getBranchScopeId } from '../utils/branchScope'
+import { useBranchScope } from '../hooks/useBranchScope'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { CLAIMS_ROLES, INVENTORY_ROLES, NHIS_ROLES, hasRole } from '../utils/roles'
 import { STOCK_SEVERITY, getStockSeverity } from '../utils/reorderCentre'
@@ -288,7 +288,7 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 
 const Dashboard = () => {
   const navigate = useNavigate()
-  const { role, profile, displayName, canManageInventory, canManageClaims, canManagePurchases } = useAuth()
+  const { role, displayName, canManageInventory, canManageClaims, canManagePurchases } = useAuth()
   const {
     tierLimits,
     organization,
@@ -302,7 +302,7 @@ const Dashboard = () => {
     canUseMultiBranch,
   } = useTenant()
   // BRANCH-001: staff who belong to a branch see that branch's sales and stock alerts only.
-  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
+  const branchScopeId = useBranchScope()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [chartMode, setChartMode] = useSessionStorageState(
@@ -341,7 +341,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     void loadDashboardData()
-  }, [role, canManageInventory, canManageClaims, canUseClaims, tierLimits.hasClaims])
+  }, [role, canManageInventory, canManageClaims, canUseClaims, tierLimits.hasClaims, branchScopeId])
 
   const loadDashboardData = async () => {
     const today = new Date()

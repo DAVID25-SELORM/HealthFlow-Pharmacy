@@ -24,8 +24,7 @@ import {
 import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { useTenant } from '../context/TenantContext'
-import { getBranchScopeId } from '../utils/branchScope'
+import { useBranchScope } from '../hooks/useBranchScope'
 import { useNotification } from '../context/NotificationContext'
 import { confirmAction } from '../utils/actionConfirmation'
 import { clearUnsavedDraft, loadUnsavedDraft, saveUnsavedDraft } from '../services/unsavedDraftRecovery'
@@ -1381,9 +1380,8 @@ const Nhis = () => {
     canViewReports,
     canManagePatients,
   } = useAuth()
-  const { canUseMultiBranch } = useTenant()
   // BRANCH-001: staff who belong to a branch see that branch's stock only.
-  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
+  const branchScopeId = useBranchScope()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInputRef = useRef(null)

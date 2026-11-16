@@ -9,7 +9,8 @@ const read = (path) => readFileSync(resolve(process.cwd(), path), 'utf8')
 describe('branch staff see their own branch only (BRANCH-001)', () => {
   it('limits the dashboard sales and stock alerts', () => {
     const dashboard = read('src/pages/Dashboard.jsx')
-    expect(dashboard).toContain('getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })')
+    expect(dashboard).toContain('const branchScopeId = useBranchScope()')
+    expect(dashboard).toContain('tierLimits.hasClaims, branchScopeId]')
     expect(dashboard).toContain('branchId: branchScopeId || undefined')
     expect(dashboard).toContain('getRecentSales(5, { branchId: branchScopeId })')
     expect(dashboard).toContain('getLowStockDrugs({ branchId: branchScopeId })')
@@ -18,7 +19,7 @@ describe('branch staff see their own branch only (BRANCH-001)', () => {
 
   it('limits the alert bell in the top bar', () => {
     const topBar = read('src/components/Layout/TopBar.jsx')
-    expect(topBar).toContain('getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })')
+    expect(topBar).toContain('const branchScopeId = useBranchScope()')
     expect(topBar).toContain('getLowStockDrugs({ branchId: branchScopeId })')
     expect(topBar).toContain('getExpiringDrugs({ branchId: branchScopeId })')
   })
@@ -36,8 +37,15 @@ describe('branch staff see their own branch only (BRANCH-001)', () => {
     expect(nhis).toContain('preferDirectRead: true')
   })
 
-  it('does not scope administrators or a pharmacy without Multi-branch', () => {
+  it('uses the same hook in the till, the NHIS page and Inventory', () => {
+    for (const path of ['src/pages/Sales.jsx', 'src/pages/Nhis.jsx', 'src/pages/Inventory.jsx']) {
+      expect(read(path)).toContain('useBranchScope()')
+    }
+  })
+
+  it('does not scope administrators, a single-branch pharmacy or a pharmacy without Multi-branch', () => {
     const scope = read('src/utils/branchScope.js')
+    expect(scope).toContain('activeBranchCount <= 1')
     expect(scope).toContain("['admin', 'super_admin']")
     expect(scope).toContain('if (!multiBranchEnabled) return')
   })

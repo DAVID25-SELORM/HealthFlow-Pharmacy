@@ -35,7 +35,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
-import { getBranchScopeId } from '../utils/branchScope'
+import { useBranchScope } from '../hooks/useBranchScope'
 import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
@@ -160,9 +160,9 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 const Inventory = () => {
   const { role, profile, branch, user, canAdjustStock, canManagePurchases } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhis, canUseNhisTopups, canUseMultiBranch, organization, tierLimits } = useTenant()
+  const { canUseNhis, canUseNhisTopups, organization, tierLimits } = useTenant()
   // BRANCH-001: a branch starts with no stock of its own; its staff are told how stock arrives.
-  const inOwnBranch = Boolean(getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch }))
+  const inOwnBranch = Boolean(useBranchScope())
   const organizationId =
     organization?.id || organization?.organization_id || profile?.organization_id || ''
   const showNhisPricing = Boolean(canUseNhis || canUseNhisTopups)

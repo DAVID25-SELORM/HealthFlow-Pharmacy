@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { subscribeToHealthflowDataChanged } from '../../lib/appEvents'
 import { useNotification } from '../../context/NotificationContext'
 import { useTenant } from '../../context/TenantContext'
-import { getBranchScopeId } from '../../utils/branchScope'
+import { useBranchScope } from '../../hooks/useBranchScope'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
@@ -65,16 +65,15 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
     assignedRoles = [],
     setActiveRole,
     branch,
-    profile,
     canManageInventory,
     canManageClaims,
     canViewReports,
     loading: authLoading,
     signOut,
   } = useAuth()
-  const { canUseClaims, tierLimits, canUseMultiBranch } = useTenant()
+  const { canUseClaims, tierLimits } = useTenant()
   // BRANCH-001: the alert bell counts the member of staff's own branch only.
-  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
+  const branchScopeId = useBranchScope()
   const { notify } = useNotification()
   const isOnline = useOnlineStatus()
   const [connectivity, setConnectivity] = useState(getConnectivityState())
@@ -215,7 +214,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
       console.error('Unable to load top bar alerts:', error)
       setAlerts([])
     }
-  }, [authReady, canUseClaimAlerts, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
+  }, [authReady, branchScopeId, canUseClaimAlerts, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

@@ -64,7 +64,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
-import { getBranchScopeId } from '../utils/branchScope'
+import { useBranchScope } from '../hooks/useBranchScope'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
 import {
@@ -241,9 +241,9 @@ const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, displayName, role, profile, organization } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhisTopups, nhisTopUpPolicy, canUseMultiBranch } = useTenant()
+  const { canUseNhisTopups, nhisTopUpPolicy } = useTenant()
   // BRANCH-001: staff who belong to a branch see that branch's recent sales only.
-  const branchScopeId = getBranchScopeId({ profile, role, multiBranchEnabled: canUseMultiBranch })
+  const branchScopeId = useBranchScope()
   const isOnline = useOnlineStatus()
   const [drugs, setDrugs] = useState([])
   const [drugSearchLoading, setDrugSearchLoading] = useState(false)

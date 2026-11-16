@@ -24,7 +24,9 @@ Stock search at the till, Inventory, Purchases, the Reorder Centre and server-si
 - Multi-branch on, a member of staff with a branch: that branch only (dashboard sales and alerts, recent sales, alert bell,
   NHIS medicine list).
 - Administrators and super administrators: organisation-wide. Staff with no branch: organisation-wide (as for transfers).
-- Pharmacies without Multi-branch: unchanged.
+- Pharmacies without Multi-branch: unchanged. A pharmacy with Multi-branch on but only one active branch is also unchanged
+  (found 2026-11-16: five pharmacies have the switch on, only two have two or more branches, and one has 66,289 stock rows
+  with no branch, so limiting its staff to a branch would have emptied their lists).
 - A new branch's Inventory says it has no stock yet and how stock arrives.
 
 ## Not done, recommended next (needs a database or edge function release, so it needs your go-ahead)
