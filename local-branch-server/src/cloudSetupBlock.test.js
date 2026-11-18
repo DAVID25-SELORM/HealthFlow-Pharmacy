@@ -118,7 +118,8 @@ describe('cloud setup block', () => {
 
   it('stays in step with the block the cloud screen prints', () => {
     // If the screen ever stops printing one of these keys, the helper would silently stop working.
-    const screen = fs.readFileSync(path.resolve('src/pages/OfflineSync.jsx'), 'utf8')
+    // The screen, the Copy button and the downloaded setup file all build their text in this one module.
+    const screen = fs.readFileSync(path.resolve('src/services/offlineSetupFile.js'), 'utf8')
     for (const key of Object.keys(SETUP_BLOCK_FIELDS)) {
       expect(screen).toContain(`${key}=\${`)
     }

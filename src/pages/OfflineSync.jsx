@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, ClipboardCopy, Download, RefreshCcw, Server, UploadCloud } from 'lucide-react'
 import {
+  buildSetupBlockText,
+  buildSetupFile,
+  hasCloudConnectionValues,
+  runOneTapSetup,
+} from '../services/offlineSetupFile'
+import {
   applyBranchCloudConfiguration,
   checkBranchCloudConnection,
   createNhiaBatch,
@@ -182,7 +188,16 @@ const branchUpdatePublicKey = String(
   .trim()
   .replace(/\r?\n/g, '\\n')
 
-const buildNhiaForm = (settings, organization) => {
+// The setup text for one registered machine: shown on screen, copied, and downloaded as the setup file.
+const setupBlockOptions = {
+  cloudUrl: healthflowCloudSyncUrl,
+  syncKey: supabaseSyncKey,
+  updateManifestUrl: branchUpdateManifestUrl,
+  updatePublicKey: branchUpdatePublicKey,
+}
+const setupBlockFor = (result) => buildSetupBlockText({ result, ...setupBlockOptions })
+
+const buildNhiaForm =(settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
   return {
     ...blankNhiaForm,
@@ -255,6 +270,7 @@ export default function OfflineSync() {
     branchSyncToken: '',
   })
   const [setupResult, setSetupResult] = useState(null)
+  const [oneTapFileName, setOneTapFileName] = useState('')
   const [setupClients, setSetupClients] = useState([])
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupClientAction, setSetupClientAction] = useState('')
@@ -585,7 +601,9 @@ export default function OfflineSync() {
     setSetupForm((current) => ({ ...current, [field]: value }))
   }
 
-  const registerSetupClient = async () => {
+  // Resolves to the registration result (token included) so the one-tap setup can write the setup file,
+  // or null when registration failed. `quiet` skips the "apply the connection" toast the old flow shows.
+  const registerSetupClient = async ({ quiet = false } = {}) => {
     try {
       setSetupLoading(true)
       setSetupResult(null)
@@ -606,9 +624,11 @@ export default function OfflineSync() {
         machineLabel: setupForm.name,
       }).catch(() => {})
       await loadSetupClients(setupForm.organizationId)
-      notify('Main Computer registered. Apply the facility connection to continue.', 'success')
+      if (!quiet) notify('Main Computer registered. Apply the facility connection to continue.', 'success')
+      return { ...result, nhiaConfigSecretKey }
     } catch (setupError) {
       notify(setupError.message || 'Unable to register branch sync client.', 'error')
+      return null
     } finally {
       setSetupLoading(false)
     }
@@ -975,10 +995,12 @@ export default function OfflineSync() {
   // transient server error) and must not block a deliberately configured URL.
   const INSTALLER_CONFIRMED_MISSING_STATUSES = [404, 410]
 
-  const openInstallerDownload = async () => {
+  // Checks everything about the installer download and resolves to the URL to open (a short-lived signed
+  // link when a release is published), or '' after telling the user why it cannot be offered.
+  const prepareInstallerDownload = async () => {
     if (!canDownloadOfflineInstaller) {
       notify(INSTALLER_NOT_ALLOWED_MESSAGE, 'error')
-      return
+      return ''
     }
 
     // A missing, blank, or placeholder URL is never opened — it is not
@@ -1036,7 +1058,67 @@ export default function OfflineSync() {
       notify(INSTALLER_UNVERIFIED_MESSAGE, 'warning')
     }
 
-    window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+    return downloadUrl
+  }
+
+  const openInstallerDownload = async () => {
+    const downloadUrl = await prepareInstallerDownload()
+    if (downloadUrl) window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  // Starts the installer download without opening a tab: the one-tap setup runs several steps after the
+  // click, by which time a browser may block a new tab. A plain link click still downloads the file.
+  const startInstallerDownloadInPlace = (downloadUrl) => {
+    const anchor = document.createElement('a')
+    anchor.href = downloadUrl
+    anchor.rel = 'noopener noreferrer'
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+  }
+
+  const saveSetupFileForResult = (result) => {
+    // Without the cloud address and key the installer would refuse the file, so do not hand out a dud.
+    if (!hasCloudConnectionValues(setupBlockOptions)) {
+      notify('The setup file needs the HealthFlow Cloud address and key, which this deployment does not have.', 'error')
+      return
+    }
+    downloadTextFile(buildSetupFile({ result, machineName: setupForm.name, ...setupBlockOptions }))
+  }
+
+  // One tap: check the installer can be downloaded, register this machine, then download the installer
+  // and a setup file. On the shop computer, Set-Up-HealthFlow-Offline.cmd finds the setup file by itself.
+  const oneTapSetup = async () => {
+    const confirmed = await requestAppConfirmation({
+      title: 'Set up offline on a computer?',
+      details: [
+        { label: 'Organization', value: setupOptions.organizations.find((item) => item.id === setupForm.organizationId)?.name },
+        { label: 'Facility/Branch', value: setupBranches.find((item) => item.id === setupForm.branchId)?.name || setupForm.branchName },
+        { label: 'Computer name', value: setupForm.name },
+      ],
+      confirmText: 'Download setup',
+    })
+    if (!confirmed) return
+    try {
+      const outcome = await runOneTapSetup({
+        prepareInstaller: prepareInstallerDownload,
+        register: () => registerSetupClient({ quiet: true }),
+        buildFile: (result) => buildSetupFile({ result, machineName: setupForm.name, ...setupBlockOptions }),
+        saveSetupFile: downloadTextFile,
+        startInstallerDownload: startInstallerDownloadInPlace,
+      })
+      if (outcome.started) {
+        setOneTapFileName(outcome.fileName)
+        notify('Two files are downloading: the installer and the setup file. Open the installer folder on the shop computer next.', 'success', 9000)
+      }
+    } catch (setupError) {
+      notify(setupError?.message || 'Unable to prepare the offline setup.', 'error')
+    }
+  }
+
+  const redownloadInstaller = async () => {
+    const downloadUrl = await prepareInstallerDownload()
+    if (downloadUrl) startInstallerDownloadInPlace(downloadUrl)
   }
 
   const exportNhiaBatch = async (format) => {
@@ -1280,6 +1362,11 @@ export default function OfflineSync() {
     canDownloadOfflineInstaller &&
     (Boolean(installerRelease?.downloadUrl) || HEALTHFLOW_INSTALLER_URL_CONFIGURED)
   const installerDetailsValue = installerRelease?.downloadUrl || HEALTHFLOW_INSTALLER_DETAILS_VALUE
+  const oneTapMissing = !effectiveInstallerConfigured
+    ? 'Needs a published installer and permission to download it.'
+    : !hasCloudConnectionValues({ cloudUrl: healthflowCloudSyncUrl, syncKey: supabaseSyncKey })
+      ? 'Needs the HealthFlow Cloud address and key in this deployment.'
+      : ''
   const installerUrlValidation = effectiveInstallerConfigured
     ? validateHealthflowInstallerUrl(effectiveInstallerUrl)
     : { valid: false, reason: 'not-configured' }
@@ -1574,7 +1661,7 @@ export default function OfflineSync() {
           <div className="offline-sync-section-header">
             <div>
               <h2>Branch Sync Setup</h2>
-              <p>Register one pharmacy machine with HealthFlow Cloud and then place the returned values in its local server .env.</p>
+              <p>Set up one pharmacy computer: press Set up offline on a computer to download the installer and a setup file, then double-click Set-Up-HealthFlow-Offline.cmd on that computer. Or register a machine and copy the setup block.</p>
             </div>
           </div>
           <div className="branch-setup-grid">
@@ -1671,10 +1758,33 @@ export default function OfflineSync() {
             >
               {setupLoading ? 'Registering...' : 'Register Sync Client'}
             </button>
-            <span>Run this once per pharmacy machine. HealthFlow Cloud stores only the token hash.</span>
+            <button
+              className="btn btn-accent"
+              type="button"
+              onClick={() => void oneTapSetup()}
+              disabled={setupLoading || !setupForm.organizationId || !setupForm.branchId || Boolean(oneTapMissing)}
+              title={oneTapMissing || 'Registers this computer and downloads the installer plus its setup file'}
+            >
+              <Download size={14} />
+              Set up offline on a computer
+            </button>
+            <span>Run this once per pharmacy machine. HealthFlow Cloud stores only the token hash.{oneTapMissing ? ` ${oneTapMissing}` : ''}</span>
           </div>
           {setupResult && (
             <div className="branch-setup-result">
+              {oneTapFileName && (
+                <div className="branch-setup-expiry-note">
+                  <p>
+                    Downloaded: the installer and <strong>{oneTapFileName}</strong>. On the shop computer, extract the
+                    installer ZIP and double-click <strong>Set-Up-HealthFlow-Offline.cmd</strong>. It finds the setup file in
+                    Downloads by itself. Your browser may ask to allow multiple downloads: choose Allow.
+                  </p>
+                  <button className="btn btn-outline btn-sm" type="button" onClick={() => void redownloadInstaller()}>
+                    <Download size={14} />
+                    Download installer again
+                  </button>
+                </div>
+              )}
               <p>This setup block is shown once. Copy it now — re-registering the same client name rotates its sync token.</p>
               {setupResult.activationExpiresAt && (
                 <p className="branch-setup-expiry-note">
@@ -1683,24 +1793,22 @@ export default function OfflineSync() {
                 </p>
               )}
               <div className="branch-setup-env-wrapper">
-                <pre className="branch-setup-env">{`PORT=4780
-NHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}
-ORGANIZATION_ID=${setupResult.organizationId}
-BRANCH_ID=${setupResult.branchId}
-BRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}
-SUPABASE_URL=${healthflowCloudSyncUrl || '<your-healthflow-cloud-url>'}
-SUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}
-HEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}
-HEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}
-HEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24
-HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
+                <pre className="branch-setup-env">{setupBlockFor(setupResult)}</pre>
                 <button
                   className="btn btn-outline btn-sm branch-setup-copy-btn"
                   type="button"
-                  onClick={() => copyEnvBlock(`PORT=4780\nNHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}\nORGANIZATION_ID=${setupResult.organizationId}\nBRANCH_ID=${setupResult.branchId}\nBRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}\nSUPABASE_URL=${healthflowCloudSyncUrl || '<your-healthflow-cloud-url>'}\nSUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}\nHEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}\nHEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}\nHEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24\nHEALTHFLOW_UPDATE_AUTO_INSTALL=false`)}
+                  onClick={() => copyEnvBlock(setupBlockFor(setupResult))}
                 >
                   <ClipboardCopy size={14} />
                   {envCopied ? 'Copied!' : 'Copy'}
+                </button>
+                <button
+                  className="btn btn-outline btn-sm"
+                  type="button"
+                  onClick={() => saveSetupFileForResult(setupResult)}
+                >
+                  <Download size={14} />
+                  Download setup file
                 </button>
                 <button
                   className="btn btn-primary btn-sm"

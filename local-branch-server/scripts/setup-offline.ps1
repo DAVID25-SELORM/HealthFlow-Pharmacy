@@ -2,8 +2,10 @@
   One-step setup of HealthFlow Offline on this Windows computer.
 
   Does everything in order, in one window:
-    1. Takes the setup code (copied from Branch Sync Setup in HealthFlow Cloud) from the clipboard, or asks
-       for it to be pasted, and checks it BEFORE changing anything on this computer.
+    1. Takes the setup code and checks it BEFORE changing anything on this computer. It uses, in order: the
+       HealthFlow-Setup-*.txt file downloaded by the "Set up offline on a computer" button in HealthFlow
+       Cloud (found next to the installer or in Downloads, deleted after a successful setup), the code
+       copied from Branch Sync Setup on the clipboard, or a code pasted into the window.
     2. Installs the offline server (files, Windows service, shortcut, facility certificate).
     3. Saves the cloud connection, restarts the service and runs the health check.
     4. Opens the offline POS.
@@ -17,6 +19,8 @@
 param(
   [string]$InstallRoot = 'C:\HealthFlowLocal',
   [string]$BlockFile = '',
+  # Extra folders to look in for the downloaded HealthFlow-Setup-*.txt (the usual places are searched anyway).
+  [string[]]$SetupFolders = @(),
   [string]$ServiceName = 'HealthFlowOfflineServer',
   [switch]$DryRun,
   [switch]$WaitAtEnd
@@ -54,6 +58,44 @@ function Test-LooksLikeSetupBlock {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $sourceServerDir = Split-Path -Parent $scriptDir
+
+# A setup code that has not been used within this long stops working (the cloud expires it after 48 hours).
+$setupFileMaxAgeHours = 48
+
+# Finds the setup file downloaded by the cloud button: next to the installer (the extracted folder, the
+# folder above it where the ZIP was extracted from, the ZIP's own folder) and in this user's Downloads.
+function Find-SetupFile {
+  $folders = New-Object System.Collections.Generic.List[string]
+  foreach ($extra in $SetupFolders) { if ($extra) { $folders.Add($extra) } }
+  $cursor = $sourceServerDir
+  for ($i = 0; $i -lt 3 -and $cursor; $i++) {
+    $folders.Add($cursor)
+    $cursor = Split-Path -Parent $cursor
+  }
+  if ($env:USERPROFILE) { $folders.Add((Join-Path $env:USERPROFILE 'Downloads')) }
+
+  $now = Get-Date
+  $usable = New-Object System.Collections.Generic.List[object]
+  foreach ($folder in ($folders | Select-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
+    foreach ($file in (Get-ChildItem -LiteralPath $folder -Filter 'HealthFlow-Setup-*.txt' -File -ErrorAction SilentlyContinue)) {
+      # Prefer the expiry written into the file; otherwise assume the file's age.
+      $expires = $file.LastWriteTime.AddHours($setupFileMaxAgeHours)
+      $head = Get-Content -LiteralPath $file.FullName -TotalCount 12 -ErrorAction SilentlyContinue
+      $marker = $head | Where-Object { $_ -match '^\s*#\s*HEALTHFLOW_SETUP_EXPIRES=(.+)$' } | Select-Object -First 1
+      if ($marker -match '=(.+)$') {
+        $parsed = [DateTimeOffset]::MinValue
+        if ([DateTimeOffset]::TryParse($Matches[1].Trim(), [ref]$parsed)) { $expires = $parsed.LocalDateTime }
+      }
+      if ($expires -lt $now) {
+        Write-Host "Ignoring $($file.Name): it expired on $($expires.ToString('yyyy-MM-dd HH:mm')). Download a new one from HealthFlow Cloud." -ForegroundColor Yellow
+        continue
+      }
+      $usable.Add($file)
+    }
+  }
+  return ($usable | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+}
 $installScript = Join-Path $scriptDir 'install-windows-service.ps1'
 $checkHelper = Join-Path $scriptDir 'connect-to-cloud.mjs'
 $serverUrl = "https://$($env:COMPUTERNAME.ToLowerInvariant()):4780"
@@ -87,18 +129,34 @@ $alreadyInstalled = [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyC
 # --- Step 1: the setup code ---------------------------------------------------------------------------
 Write-Step 'Step 1 of 4: setup code'
 $block = ''
+$setupFileUsed = ''
 if ($BlockFile) {
   if (-not (Test-Path -LiteralPath $BlockFile)) { Stop-WithMessage "File not found: $BlockFile" }
   $block = Get-Content -LiteralPath $BlockFile -Raw
 } else {
-  try { $block = [string](Get-Clipboard -Raw) } catch { $block = '' }
+  # The "Set up offline on a computer" button in HealthFlow Cloud downloads HealthFlow-Setup-*.txt next to
+  # the installer. Use the newest one that has not expired; otherwise fall back to the clipboard.
+  $setupFile = Find-SetupFile
+  if ($setupFile) {
+    $block = Get-Content -LiteralPath $setupFile.FullName -Raw
+    if (Test-LooksLikeSetupBlock $block) {
+      $setupFileUsed = $setupFile.FullName
+      Write-Host "Using the setup file $($setupFile.Name) (downloaded $($setupFile.LastWriteTime.ToString('yyyy-MM-dd HH:mm')))."
+    } else {
+      Write-Host "The file $($setupFile.Name) is not a HealthFlow setup file; ignoring it." -ForegroundColor Yellow
+      $block = ''
+    }
+  }
+  if (-not $setupFileUsed) {
+    try { $block = [string](Get-Clipboard -Raw) } catch { $block = '' }
+  }
 }
 
-$blockFromClipboard = (-not $BlockFile) -and (Test-LooksLikeSetupBlock $block)
+$blockFromClipboard = (-not $BlockFile) -and (-not $setupFileUsed) -and (Test-LooksLikeSetupBlock $block)
 
 if (-not (Test-LooksLikeSetupBlock $block)) {
-  Write-Host 'No HealthFlow setup code found on the clipboard.'
-  Write-Host 'In HealthFlow Cloud: Branch Sync Setup, register this computer, press Copy.'
+  Write-Host 'No HealthFlow setup file (HealthFlow-Setup-*.txt) or setup code on the clipboard was found.'
+  Write-Host 'In HealthFlow Cloud: Offline Sync, Branch Sync Setup, press "Set up offline on a computer" (or register this computer and press Copy).'
   if ($alreadyInstalled) {
     Write-Host 'HealthFlow is already installed here. Paste a new setup code to reconnect it,'
     Write-Host 'or just press Enter to only check that it is working.'
@@ -129,6 +187,9 @@ if ($haveBlock) {
 
 if ($DryRun) {
   Write-Step 'Dry run: this is what would happen next'
+  if ($setupFileUsed) {
+    Write-Host "  (setup file in use: $(Split-Path -Leaf $setupFileUsed); it would be deleted after a successful setup)"
+  }
   if ($haveBlock) {
     Write-Host "  2. Install HealthFlow Offline into $InstallRoot (Windows service $ServiceName)"
     Write-Host '  3. Save the cloud connection, restart the service, run the health check'
@@ -183,6 +244,17 @@ if (-not $connected) {
     Write-Host 'The health check reported a problem (see the FAIL lines above).' -ForegroundColor Yellow
   }
   Exit-Script 1
+}
+
+# The setup file holds a sync token; do not leave it sitting in Downloads once it has been used.
+if ($setupFileUsed) {
+  try {
+    [System.IO.File]::WriteAllText($setupFileUsed, '')
+    Remove-Item -LiteralPath $setupFileUsed -Force -ErrorAction Stop
+    Write-Host 'Deleted the setup file now that it has been used.'
+  } catch {
+    Write-Host "Delete the setup file yourself: $setupFileUsed" -ForegroundColor Yellow
+  }
 }
 
 # The setup code holds a sync token; do not leave it sitting on the clipboard.

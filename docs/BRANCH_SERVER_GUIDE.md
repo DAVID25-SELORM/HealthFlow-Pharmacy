@@ -169,20 +169,33 @@ can continue offline without internet.
 
 For a new shop computer this is the whole procedure:
 
-1. In HealthFlow Cloud, open **Branch Sync Setup**, register the computer and
-   press **Copy** (the block is shown once).
+1. In HealthFlow Cloud, open **Offline Sync**, then **Branch Sync Setup**, choose the
+   organization and branch, and press **Set up offline on a computer**. The browser
+   downloads the installer ZIP and a setup file named `HealthFlow-Setup-<name>.txt`
+   (your browser may ask to allow multiple downloads: choose Allow). The button is
+   available to super admins, and only when an installer is published and the
+   deployment knows the cloud address and key.
 2. On the shop computer, extract the installer ZIP and double-click
    `Set-Up-HealthFlow-Offline.cmd` (at the top of the extracted folder). Choose Yes
-   when Windows asks for permission.
+   when Windows asks for permission. If you pressed the button on the shop computer
+   itself, the setup file is already in Downloads and is found automatically. If you
+   pressed it elsewhere, copy the setup file to that computer's Downloads folder or
+   next to the extracted folder.
 
-It checks the copied setup code **before** changing anything (a bad or incomplete
+The setup file holds a one-computer sync token that expires after 48 hours if unused,
+so treat it like a password. The browser creates the token; HealthFlow Cloud stores only
+its hash. The script uses the newest unexpired `HealthFlow-Setup-*.txt` it finds (the
+extracted folder, the folder above it, and Downloads), then deletes it after a successful
+setup. Without a setup file it uses the setup code on the clipboard (the older **Copy**
+flow in Branch Sync Setup), or asks you to paste it.
+
+It checks the setup code **before** changing anything (a bad or incomplete
 code stops it with nothing installed), then installs HealthFlow Offline, saves the
 cloud connection, restarts the service, runs the health check and opens the
-offline POS. If the code was copied on another computer it asks you to paste it
-into the window. It clears the setup code from the clipboard when it succeeds,
+offline POS. It clears a clipboard setup code when it succeeds,
 never prints a token or key, and is safe to run again: the install repairs in
 place and keeps `C:\HealthFlowLocal\data`. Running it on an already-installed
-computer with nothing on the clipboard just runs the health check.
+computer with nothing to read just runs the health check.
 
 To check a setup code without installing anything, run
 `powershell -File local-branch-server\scripts\setup-offline.ps1 -DryRun` (no

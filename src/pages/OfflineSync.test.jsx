@@ -193,6 +193,36 @@ describe('OfflineSync branch registration', () => {
     expect(screen.getByText(/unused setup blocks expire automatically/i)).toBeInTheDocument()
   })
 
+  it('offers the one-tap offline setup, switched off with the reason while no installer is published', async () => {
+    renderAdvanced()
+    await screen.findByText('Dispensary server')
+
+    const oneTap = screen.getByRole('button', { name: /Set up offline on a computer/ })
+    expect(oneTap).toBeDisabled()
+    expect(oneTap).toHaveAttribute('title', expect.stringMatching(/published installer/i))
+    // Nothing is registered by looking at it.
+    expect(mocks.registerBranchSyncClient).not.toHaveBeenCalled()
+  })
+
+  it('does not hand out a setup file the installer would refuse (no cloud address or key in this deployment)', async () => {
+    const createObjectURL = vi.fn(() => 'blob:setup')
+    window.URL.createObjectURL = createObjectURL
+    window.URL.revokeObjectURL = vi.fn()
+
+    renderAdvanced()
+    await screen.findByText('Dispensary server')
+    fireEvent.click(screen.getByRole('button', { name: 'Register Sync Client' }))
+    await screen.findByText(/PORT=4780/)
+
+    fireEvent.click(screen.getByRole('button', { name: /Download setup file/ }))
+
+    expect(mocks.notify).toHaveBeenCalledWith(
+      expect.stringMatching(/needs the HealthFlow Cloud address and key/i),
+      'error'
+    )
+    expect(createObjectURL).not.toHaveBeenCalled()
+  })
+
   it('checks and starts a signed localhost update from the admin controls', async () => {
     mocks.getBranchServerConfig.mockReturnValue({
       enabled: true,

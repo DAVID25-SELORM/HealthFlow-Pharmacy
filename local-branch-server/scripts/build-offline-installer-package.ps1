@@ -130,13 +130,17 @@ Purpose
 - Does not require internet during installation when this package was built with bundled Node.js, bundled NSSM, and bundled production dependencies.
 
 How to install (one button)
-1. While this computer has internet, sign in to HealthFlow Cloud (on any computer), open Branch Sync Setup, register this computer, and press Copy.
-2. Extract this ZIP on the target Windows computer.
+1. Sign in to HealthFlow Cloud as an administrator, open Offline Sync, and press "Set up offline on a computer".
+   Your browser downloads this installer and a small setup file named HealthFlow-Setup-<name>.txt.
+   (If you press it on the shop computer itself, both files are already where they need to be.)
+2. On the shop computer, extract this ZIP. Keep the setup file in the Downloads folder or next to the extracted folder.
 3. Double-click Set-Up-HealthFlow-Offline.cmd and choose Yes when Windows asks for permission.
-   It checks the copied setup code, installs HealthFlow, connects it to HealthFlow Cloud, checks that it works, and opens the offline POS.
-   If you copied the code on another computer, it asks you to paste it into the window.
+   It finds the setup file by itself, checks it, installs HealthFlow, connects it to HealthFlow Cloud, checks that it works,
+   opens the offline POS, and deletes the setup file.
+   No setup file? It uses the setup code on the clipboard (Branch Sync Setup, Copy), or asks you to paste it into the window.
 4. Sign in to HealthFlow Offline. The first sync starts on its own. After the first sync, supported operations can continue offline.
 
+The setup file works for one computer and stops working after 48 hours if unused. Keep it private.
 If something stops, the window says what to fix. Run Set-Up-HealthFlow-Offline.cmd again; it is safe to repeat and keeps the data.
 
 Manual steps (only if you need them)
