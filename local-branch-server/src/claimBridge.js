@@ -138,7 +138,8 @@ export const createClaimBridgeRouter = () => {
     })
   })
 
-  router.all('*', async (request, response, next) => {
+  // A regular expression, not '*': Express 5 rejects a bare '*' and the server would not start.
+  router.all(/.*/, async (request, response, next) => {
     if (!config.claimBridge.upstreamBaseUrl) {
       response.status(503).json({ error: 'CLAIM-it upstream base URL is not configured.' })
       return

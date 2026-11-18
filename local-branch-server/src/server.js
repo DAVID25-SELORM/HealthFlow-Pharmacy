@@ -104,6 +104,7 @@ import {
 } from './supabaseSync.js'
 import { startSyncWorker, stopSyncWorker, waitForSyncWorkerIdle } from './syncWorker.js'
 import { getOfflineReadiness } from './offlineReadiness.js'
+import { registerSpaFallback } from './spaFallback.js'
 import {
   checkForUpdates,
   getUpdateStatus,
@@ -1704,15 +1705,7 @@ app.get('/api/sync/diagnostics', async (_request, response, next) => {
 
 // ✅ SPA FALLBACK PATCH START
 if (fs.existsSync(frontendIndex)) {
-  app.get('*', (request, response, next) => {
-    if (request.path.startsWith('/api/')) {
-      next()
-      return
-    }
-
-    response.setHeader('Cache-Control', 'no-store')
-    response.sendFile(frontendIndex)
-  })
+  registerSpaFallback(app, frontendIndex)
 }
 // ✅ SPA FALLBACK PATCH END
 
