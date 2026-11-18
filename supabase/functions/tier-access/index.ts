@@ -6501,11 +6501,12 @@ Deno.serve(async (request) => {
       }
       if(action==='save_ccc_policy') {
         if(!platformAdmin) return json({error:'Only platform administrators can change CCC providers.'},403)
-        if(!['existing','otac'].includes(String(payload.provider)) || typeof payload.enabled!=='boolean') throw new Error('Select a valid CCC provider and enabled state.')
+        if(!['existing','otac','nehfams'].includes(String(payload.provider)) || typeof payload.enabled!=='boolean') throw new Error('Select a valid CCC provider and enabled state.')
+        if(payload.provider==='nehfams' && (payload.enabled || normalizeText(payload.bearerToken))) throw new Error('NeHFAMS cannot be enabled or configured until official API validation is complete.')
         const old=await getCccPolicy(adminClient,org)
         const supplied=normalizeText(payload.bearerToken)
-        const expectedHpn=normalizeText(payload.expectedHpn)
-        const expectedName=normalizeText(payload.expectedFacilityName)
+        const expectedHpn=payload.provider==='nehfams' ? old.expected_hpn : normalizeText(payload.expectedHpn)
+        const expectedName=payload.provider==='nehfams' ? old.expected_facility_name : normalizeText(payload.expectedFacilityName)
         let token: {token:string,expiresAt:string}|null=null
         if(supplied) token=inspectOtacToken(supplied,expectedHpn)
         if(payload.provider==='otac' && payload.enabled) {

@@ -1,3 +1,4 @@
+import { requireLiveCccProvider } from './cccProviderRegistry.ts'
 import { normalizeAttendanceNewCcc } from '../../../src/utils/nhiaAttendanceValues.js'
 // No patient data or credentials may be logged by this module.
 export const OTAC_URL = 'https://otac.nhia.gov.gh/api/attendance/generate'
@@ -37,7 +38,7 @@ export async function getCccPolicy(db: any, org: string) {
 
 export function publicCccPolicy(p: any) {
  return {provider:p.provider, enabled:p.enabled, expectedHpn:p.expected_hpn || '', expectedFacilityName:p.expected_facility_name || '', hasToken:!!p.token_encrypted, tokenExpiresAt:p.token_expires_at || null, version:p.version,
- status:!p.enabled?'disabled':p.provider==='existing'?'existing_configuration':!p.token_encrypted?'needs_token':!Number.isFinite(Date.parse(p.token_expires_at)) || Date.parse(p.token_expires_at)<=Date.now()+60000?'needs_renewal':'configured', updatedAt:p.updated_at}
+ status:p.provider==='nehfams'?'not_available':!['existing','otac'].includes(p.provider)?'unsupported':!p.enabled?'disabled':p.provider==='existing'?'existing_configuration':!p.token_encrypted?'needs_token':!Number.isFinite(Date.parse(p.token_expires_at)) || Date.parse(p.token_expires_at)<=Date.now()+60000?'needs_renewal':'configured', updatedAt:p.updated_at}
 }
 
 export async function runCccRequest({db,org,actor,branch,payload,decode,existing,preflightExisting,fetcher=fetch}: any) {
@@ -46,6 +47,7 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
  if (card==='NHISCARD' ? !/^\d{8,}$/.test(member) : card!=='GHANACARD' || !/^GHA-\d{9}-\d$/.test(member)) throw new Error('Enter a valid membership number and card type')
  const date = text(payload.serviceDate).slice(0,10) || new Date().toISOString().slice(0,10)
  const policy = await getCccPolicy(db,org)
+ requireLiveCccProvider(policy.provider)
  if(!policy.enabled) throw new Error('CCC generation is disabled for this facility')
  const {data:reservation,error} = await db.rpc('reserve_ccc_attendance',{p_org:org,p_actor:actor,p_branch:branch || null,p_encounter:text(payload.claimId || payload.claim_id) || `attendance:${member}:${date}`,p_member:member,p_card:card,p_date:date})
  if(error) throw new Error(error.message)
@@ -54,7 +56,8 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
  let result
  let dispatched = false
  try {
-  if(snapshot.provider==='otac') {
+  const provider = requireLiveCccProvider(snapshot.provider)
+  if(provider==='otac') {
    const {token} = inspectOtacToken(await decode(snapshot.token_encrypted),snapshot.expected_hpn)
    dispatched = true
    let response
@@ -69,7 +72,7 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
     throw new CccFailure(timedOut(error)?'otac_timeout':'otac_invalid_response', timedOut(error)?'OTAC response timed out.':'OTAC returned an unreadable response.')
    }
    result = mapOtacResponse(body,snapshot.expected_facility_name,date)
-  } else {
+  } else if(provider==='existing') {
    await preflightExisting()
    result = await existing({...payload,memberNumber:member,cardType:card}, () => { dispatched = true })
    if(!result?.ccCode || !/^\d{5}$/.test(result.ccCode)) throw new CccFailure('existing_attendance_unconfirmed', 'NHIA did not confirm a valid attendance code.')

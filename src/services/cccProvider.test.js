@@ -19,6 +19,20 @@ function database({ cached = false, saveError = false, provider = 'otac' } = {})
 }
 const args = (db) => ({ db, org: 'org', actor: 'actor', branch: null, payload: { memberNumber: '12345678', serviceDate: '2026-10-10' }, decode: async () => token({ HPN: '123', exp: Math.floor(Date.now()/1000)+3600 }), existing: vi.fn(), preflightExisting: vi.fn() })
 describe('CCC provider safety', () => {
+  it.each(['nehfams', 'unknown', '__proto__', null])('rejects %s before reserving or transmitting', async provider => {
+    const { db } = database({ provider }); const options = args(db); const fetcher = vi.fn()
+    await expect(runCccRequest({ ...options, fetcher })).rejects.toThrow(/provider|NeHFAMS/)
+    expect(db.rpc).not.toHaveBeenCalled()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(options.existing).not.toHaveBeenCalled()
+  })
+  it('rechecks the reserved policy if it changed during reservation', async () => {
+    const { db } = database({ provider: 'existing' }); const options = args(db); const fetcher = vi.fn()
+    db.rpc.mockResolvedValue({ data: { request_id: 'r', policy: { provider: 'nehfams' } } })
+    await expect(runCccRequest({ ...options, fetcher })).rejects.toThrow(/No request was sent/)
+    expect(fetcher).not.toHaveBeenCalled(); expect(options.existing).not.toHaveBeenCalled()
+  })
+
   it('releases existing-provider failures before transmission', async () => {
     const { db, updates } = database({ provider: 'existing' })
     const options = args(db)

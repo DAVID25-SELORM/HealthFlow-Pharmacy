@@ -2798,7 +2798,7 @@ const Nhis = () => {
     const interval = setInterval(load, 60000)
     return () => { active = false; clearInterval(interval) }
   }, [organizationId, isBranchServerEnabled])
-  const canGenerateNhiaCcCode = Boolean(cccPolicy?.enabled && (cccPolicy.provider === 'otac'
+  const canGenerateNhiaCcCode = Boolean(['existing', 'otac'].includes(cccPolicy?.provider) && cccPolicy?.enabled && (cccPolicy.provider === 'otac'
     ? cccPolicy.status === 'configured'
     : nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export'))
   const cccUnavailableReason = !cccPolicy

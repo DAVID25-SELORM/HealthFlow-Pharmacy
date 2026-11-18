@@ -25,7 +25,7 @@ export default function CccIntegrationSettings({ organizationId }) {
       setData(result); setForm(result.policy); setToken(''); setSaved(true); setMessage('')
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
-  const statusLabels = { disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
+  const statusLabels = { not_available: 'NeHFAMS unavailable', unsupported: 'Unsupported provider', disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
   return <section className="ccc-settings" aria-label="CCC integration">
     <header className="ccc-header">
       <div><span className="ccc-eyebrow">NHIA CONNECTION</span><h3>CCC integration</h3><p>Choose how this facility generates its CCCs.</p></div>
@@ -35,13 +35,16 @@ export default function CccIntegrationSettings({ organizationId }) {
     {!form && !message && <p role="status">Loading connection settings...</p>}
     {form && <form onSubmit={save} onChange={() => setSaved(false)}>
       <fieldset className="ccc-providers" disabled={busy}>
-        <legend>1. Choose a provider</legend>
+        <legend>CCC Integration Provider</legend>
         {[['existing', 'Existing NHIA API', 'Continue using the existing API configuration.'], ['otac', 'NHIA OTAC', 'Connect with an authorized facility Bearer token.']].map(([value, title, description]) =>
           <label key={value} className={`ccc-provider ${form.provider === value ? 'selected' : ''}`}>
             <input type="radio" name={`ccc-provider-${organizationId}`} value={value} checked={form.provider === value} onChange={() => setForm({ ...form, provider: value })} />
             <span><strong>{title}</strong><small>{description}</small></span>
           </label>)}
-      </fieldset>
+      <label className={`ccc-provider ${form.provider === 'nehfams' ? 'selected' : ''}`}>
+          <input type="radio" name={`ccc-provider-${organizationId}`} checked={form.provider === 'nehfams'} onChange={() => { setToken(''); setForm({ ...form, provider: 'nehfams', enabled: false }) }} />
+          <span>NHIA NeHFAMS - unavailable pending API validation</span>
+        </label></fieldset>
       {form.provider === 'otac' && <div className="ccc-credentials">
         <h4>2. Connect this facility</h4>
         <p>Enter the details and token for the NHIA OTAC account of this facility.</p>
@@ -56,7 +59,7 @@ export default function CccIntegrationSettings({ organizationId }) {
         <p className="ccc-help">Saved provider and facility details remain until you change and save them. Token expiry does not erase your settings.</p>
         <p className="ccc-help">Saving checks the token format, expiry and facility HPN. NHIA verifies authorization when you generate attendance.</p>
       </div>}
-      <div className="ccc-enable"><label><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> <span><strong>Enable CCC generation</strong><small>Allow staff to generate codes using the selected provider.</small></span></label></div>
+      <div className="ccc-enable"><label><input type="checkbox" disabled={form.provider === 'nehfams'} checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> <span><strong>Enable CCC generation</strong><small>Allow staff to generate codes using the selected provider.</small></span></label></div>
       <footer className="ccc-footer"><p>Changes apply after saving. Unresolved attendance must be checked with NHIA before switching providers.</p><button type="submit" disabled={busy}>{busy ? 'Saving...' : saved ? 'Saved' : 'Save CCC settings'}</button></footer>
       <div aria-live="polite" aria-atomic="true">{saved && <p className="ccc-save-success" role="status">CCC settings saved successfully. Your facility configuration has been updated.</p>}</div>
     </form>}
@@ -66,7 +69,7 @@ export default function CccIntegrationSettings({ organizationId }) {
         <dl className="ccc-request-details">
           <div><dt>Card type</dt><dd>{request.card_type === 'NHISCARD' ? 'NHIS card' : request.card_type === 'GHANACARD' ? 'Ghana card' : request.card_type || 'Not available'}</dd></div>
           <div><dt>Attendance date</dt><dd>{request.attendance_date || 'Not available'}</dd></div>
-          <div><dt>Provider</dt><dd>{request.provider === 'otac' ? 'NHIA OTAC' : 'Existing NHIA API'}</dd></div>
+          <div><dt>Provider</dt><dd>{({ existing: 'Existing NHIA API', otac: 'NHIA OTAC', nehfams: 'NHIA NeHFAMS' }[request.provider] || 'Unsupported provider')}</dd></div>
           <div><dt>Requested (Ghana time)</dt><dd>{new Date(request.created_at).toLocaleString('en-GB', { timeZone: 'Africa/Accra' })}</dd></div>
           <div className="ccc-request-reference"><dt>HealthFlow request ID</dt><dd>{request.id}</dd></div>
         </dl>
