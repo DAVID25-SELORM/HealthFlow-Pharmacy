@@ -165,6 +165,24 @@ registers the machine for cloud sync and the Offline Setup Wizard verifies
 readiness. Once the facility has been permitted and synced, supported workflows
 can continue offline without internet.
 
+### Connecting a freshly installed computer to the cloud
+
+A fresh install has no cloud address or sync key yet, so the signed-in **Apply
+facility connection** button cannot verify an administrator until the server has
+been given them once. Use the helper instead of editing `.env` by hand:
+
+1. In HealthFlow Cloud, open **Branch Sync Setup**, register the computer and
+   press **Copy** (the block is shown once).
+2. On the shop computer, double-click `Connect-To-HealthFlow-Cloud.cmd` in the
+   `local-branch-server` folder and choose Yes. It reads the clipboard (or asks you
+   to paste the block), saves the six connection values, restarts the
+   `HealthFlowOfflineServer` service and runs the health check.
+
+It uses the same saving code as the **Apply facility connection** button, refuses
+an incomplete or invalid block without changing anything, keeps the other `.env`
+settings, keeps one backup (`.env.before-cloud-connect`), and never prints a token
+or key. Run it again with a new block to move a computer to another branch.
+
 After uploading `HealthFlow-Offline-Installer-<version>.zip` to the approved
 HTTPS download location, set production `VITE_HEALTHFLOW_INSTALLER_URL` to that
 exact ZIP URL and redeploy the cloud app.

@@ -133,8 +133,9 @@ How to install
 1. Extract this ZIP on the target Windows computer.
 2. Right-click Install-HealthFlow.cmd and choose Run as administrator.
 3. Wait for production health checks to pass.
-4. Open the HealthFlow Offline POS desktop shortcut.
-5. Use Branch Sync Setup/Offline Setup Wizard while internet is available to register and sync the facility data. After setup and sync, supported operations can continue offline.
+4. While this computer has internet, sign in to HealthFlow Cloud (any computer), open Branch Sync Setup, register this computer, and press Copy.
+5. On this computer, double-click Connect-To-HealthFlow-Cloud.cmd (inside the local-branch-server folder) and choose Yes. It saves the connection from the copied block, restarts HealthFlow, and checks it. If you copied the block on another computer, it asks you to paste it.
+6. Open the HealthFlow Offline POS desktop shortcut and sign in. The first sync starts on its own. After the first sync, supported operations can continue offline.
 
 Included
 - local-branch-server application files
@@ -143,6 +144,7 @@ Included
 - portable Node.js runtime in local-branch-server/runtime/node
 - bundled NSSM service helper
 - one-click elevated installer
+- Connect-To-HealthFlow-Cloud.cmd: connects this computer to HealthFlow Cloud from the block copied in Branch Sync Setup
 
 Important
 - Do not expose port 4780 to the public internet.
