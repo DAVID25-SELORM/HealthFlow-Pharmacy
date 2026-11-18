@@ -1,0 +1,1 @@
+import{c as e}from"./supabase-D4aaN8qK.js";async function t(t,n={}){let{data:r,error:i}=await e(`tier-access`,{body:{...n,action:t}});if(i)throw i;if(r?.error)throw Error(r.error);return r}export{t};

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'healthflow-pharmacy-shell-v9'
+const CACHE_NAME = 'healthflow-pharmacy-shell-v10'
 const CANONICAL_APP_ORIGIN = 'https://healthflowcloud.com'
 const LEGACY_APP_HOSTS = new Set([
   'health-flow-pharmacy.vercel.app',
@@ -64,14 +64,19 @@ self.addEventListener('fetch', (event) => {
 
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const responseCopy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', responseCopy))
+        .then(async (response) => {
+          if (response.ok && response.headers.get('Content-Type')?.includes('text/html')) {
+            const responseCopy = response.clone()
+            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', responseCopy)))
+          } else if (response.status >= 500) {
+            const cachedShell = await caches.match('/index.html')
+            if (cachedShell?.ok) return cachedShell
+          }
           return response
         })
         .catch(async () => {
           const cachedShell = await caches.match('/index.html')
-          return cachedShell || new Response('HealthFlow is unavailable offline until the app shell is cached.', {
+          return (cachedShell?.ok && cachedShell) || new Response('HealthFlow is unavailable offline until the app shell is cached.', {
             status: 503,
             headers: { 'Content-Type': 'text/plain' },
           })
@@ -86,10 +91,35 @@ self.addEventListener('fetch', (event) => {
 
       if (preferNetwork) {
         return fetch(request)
-          .then((response) => {
+          .then(async (response) => {
             if (response.ok) {
               const responseCopy = response.clone()
               caches.open(CACHE_NAME).then((cache) => cache.put(request, responseCopy))
+              return response
+            }
+
+            if (cachedResponse) {
+              return cachedResponse
+            }
+
+            if (['script', 'style'].includes(request.destination) && event.clientId) {
+              try {
+                const currentShell = await fetch(`/index.html?__healthflow_sw_refresh=${Date.now()}`, {
+                  cache: 'reload',
+                })
+                if (currentShell.ok) {
+                  const cache = await caches.open(CACHE_NAME)
+                  await cache.put('/index.html', currentShell.clone())
+                }
+              } catch {
+                // The client-side recovery still performs a cache-busted reload.
+              }
+              const client = await self.clients.get(event.clientId)
+              client?.postMessage({
+                type: 'HEALTHFLOW_ASSET_MISS',
+                url: request.url,
+                status: response.status,
+              })
             }
 
             return response

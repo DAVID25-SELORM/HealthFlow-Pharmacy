@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-096o_Uk7.js";var t=e(),n=({id:e,visible:n,onChange:r})=>(0,t.jsxs)(`label`,{className:`password-visibility-checkbox`,htmlFor:e,children:[(0,t.jsx)(`input`,{id:e,type:`checkbox`,checked:n,onChange:e=>r(e.target.checked)}),`Show password`]});export{n as t};

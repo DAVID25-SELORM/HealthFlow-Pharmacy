@@ -1,0 +1,1 @@
+import{t as e}from"./appDialog-CWNC8rcU.js";var t=t=>e(t);export{t};

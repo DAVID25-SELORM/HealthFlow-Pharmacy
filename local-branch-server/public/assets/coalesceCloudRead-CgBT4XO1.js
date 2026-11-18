@@ -1,0 +1,1 @@
+import{r as e}from"./supabase-D4aaN8qK.js";var t=()=>{let t=new WeakMap;return(n,r)=>{let i=e();if(!i)return r();let a=t.get(i);if(a||(a=new Map,t.set(i,a)),a.has(n))return a.get(n);let o=Promise.resolve().then(r).finally(()=>a.delete(n));return a.set(n,o),o}};export{t};
