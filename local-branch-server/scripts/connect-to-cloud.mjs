@@ -3,13 +3,33 @@
 // .env, using the same function (saveCloudSyncSettings) the app's "Apply facility connection" button uses.
 // It prints ids and the cloud address only, never a token or key.
 //
-// Exit codes: 0 saved, 2 the block was not usable (nothing was changed), 1 unexpected failure.
+// With --check it only proves the block is usable: it runs the same validation against a throwaway
+// file and never touches the real .env (used before installing, so a bad block is caught up front).
+//
+// Exit codes: 0 saved (or, with --check, usable), 2 the block was not usable (nothing was changed),
+// 1 unexpected failure.
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseSetupBlock, SetupBlockError, summarizeSetup } from '../src/cloudSetupBlock.js'
 
+const checkOnly = process.argv.includes('--check')
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+let scratchDir = ''
+if (checkOnly) {
+  scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-check-'))
+  process.env.HEALTHFLOW_ENV_PATH = path.join(scratchDir, '.env')
+  process.on('exit', () => {
+    try {
+      fs.rmSync(scratchDir, { recursive: true, force: true })
+    } catch {
+      // A leftover temp folder is harmless; it only ever holds the validated copy.
+    }
+  })
+}
+
 const envPath = process.env.HEALTHFLOW_ENV_PATH
   ? path.resolve(process.env.HEALTHFLOW_ENV_PATH)
   : path.join(serverDir, '.env')
@@ -35,7 +55,7 @@ try {
 }
 
 // One rolling copy of the .env as it was, in case the technician needs to go back.
-if (fs.existsSync(envPath)) {
+if (!checkOnly && fs.existsSync(envPath)) {
   fs.copyFileSync(envPath, `${envPath}.before-cloud-connect`)
   fs.chmodSync(`${envPath}.before-cloud-connect`, 0o600)
 }
@@ -43,7 +63,8 @@ if (fs.existsSync(envPath)) {
 try {
   // Keep dotenv's "injected env" notices off the technician's screen.
   process.env.DOTENV_CONFIG_QUIET ??= 'true'
-  // Loaded only now, so an unusable block never reaches the server's configuration code.
+  // Loaded only now, so an unusable block never reaches the server's configuration code, and so the
+  // --check scratch path above is in place before that code reads it.
   const { saveCloudSyncSettings } = await import('../src/tlsSettings.js')
   saveCloudSyncSettings(input)
 } catch (error) {
@@ -52,9 +73,16 @@ try {
 }
 
 const summary = summarizeSetup(input)
-console.log('Saved the cloud connection for this computer.')
-console.log(`  Organization: ${summary.organizationId}`)
-console.log(`  Branch:       ${summary.branchId}`)
-console.log(`  Cloud:        ${summary.cloudHost}`)
-console.log('  Sync token and key: received and stored (not shown)')
-console.log(`  Settings file: ${envPath}`)
+if (checkOnly) {
+  console.log('The setup code is complete and valid.')
+  console.log(`  Organization: ${summary.organizationId}`)
+  console.log(`  Branch:       ${summary.branchId}`)
+  console.log(`  Cloud:        ${summary.cloudHost}`)
+} else {
+  console.log('Saved the cloud connection for this computer.')
+  console.log(`  Organization: ${summary.organizationId}`)
+  console.log(`  Branch:       ${summary.branchId}`)
+  console.log(`  Cloud:        ${summary.cloudHost}`)
+  console.log('  Sync token and key: received and stored (not shown)')
+  console.log(`  Settings file: ${envPath}`)
+}

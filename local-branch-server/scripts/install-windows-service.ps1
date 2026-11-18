@@ -7,7 +7,10 @@ param(
   [string]$LanIp = '',
   [switch]$InstallDependencies,
   [switch]$OfflineOnly,
-  [switch]$SkipCopy
+  [switch]$SkipCopy,
+  # Skips opening the browser at the end. Set-Up-HealthFlow-Offline.cmd uses it because it opens the POS
+  # itself, once, after the computer is connected to the cloud.
+  [switch]$NoBrowser
 )
 
 $ErrorActionPreference = 'Stop'
@@ -182,6 +185,9 @@ function Wait-HealthFlowServerReachable {
   } while ((Get-Date) -lt $deadline)
   return $false
 }
+
+# Only the automatic browser launch below depends on this; the one-step setup opens the POS itself.
+if ($NoBrowser) { $isFreshInstall = $false }
 
 if ($isFreshInstall) {
   $freshInstallService = Get-Service -Name $healthFlowServiceName -ErrorAction SilentlyContinue

@@ -165,7 +165,33 @@ registers the machine for cloud sync and the Offline Setup Wizard verifies
 readiness. Once the facility has been permitted and synced, supported workflows
 can continue offline without internet.
 
-### Connecting a freshly installed computer to the cloud
+### One-step setup of a shop computer
+
+For a new shop computer this is the whole procedure:
+
+1. In HealthFlow Cloud, open **Branch Sync Setup**, register the computer and
+   press **Copy** (the block is shown once).
+2. On the shop computer, extract the installer ZIP and double-click
+   `Set-Up-HealthFlow-Offline.cmd` (at the top of the extracted folder). Choose Yes
+   when Windows asks for permission.
+
+It checks the copied setup code **before** changing anything (a bad or incomplete
+code stops it with nothing installed), then installs HealthFlow Offline, saves the
+cloud connection, restarts the service, runs the health check and opens the
+offline POS. If the code was copied on another computer it asks you to paste it
+into the window. It clears the setup code from the clipboard when it succeeds,
+never prints a token or key, and is safe to run again: the install repairs in
+place and keeps `C:\HealthFlowLocal\data`. Running it on an already-installed
+computer with nothing on the clipboard just runs the health check.
+
+To check a setup code without installing anything, run
+`powershell -File local-branch-server\scripts\setup-offline.ps1 -DryRun` (no
+administrator rights needed; `-BlockFile <file>` reads the code from a file).
+
+### Connecting a freshly installed computer to the cloud (separate step)
+
+`Set-Up-HealthFlow-Offline.cmd` already does this. The steps below are for a
+computer installed earlier with `Install-HealthFlow.cmd`.
 
 A fresh install has no cloud address or sync key yet, so the signed-in **Apply
 facility connection** button cannot verify an administrator until the server has

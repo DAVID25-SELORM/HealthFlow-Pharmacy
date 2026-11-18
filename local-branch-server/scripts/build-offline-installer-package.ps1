@@ -129,13 +129,19 @@ Purpose
 - Designed for pharmacy/hospital first-time offline setup after the administrator permits/registers the facility machine.
 - Does not require internet during installation when this package was built with bundled Node.js, bundled NSSM, and bundled production dependencies.
 
-How to install
-1. Extract this ZIP on the target Windows computer.
-2. Right-click Install-HealthFlow.cmd and choose Run as administrator.
-3. Wait for production health checks to pass.
-4. While this computer has internet, sign in to HealthFlow Cloud (any computer), open Branch Sync Setup, register this computer, and press Copy.
-5. On this computer, double-click Connect-To-HealthFlow-Cloud.cmd (inside the local-branch-server folder) and choose Yes. It saves the connection from the copied block, restarts HealthFlow, and checks it. If you copied the block on another computer, it asks you to paste it.
-6. Open the HealthFlow Offline POS desktop shortcut and sign in. The first sync starts on its own. After the first sync, supported operations can continue offline.
+How to install (one button)
+1. While this computer has internet, sign in to HealthFlow Cloud (on any computer), open Branch Sync Setup, register this computer, and press Copy.
+2. Extract this ZIP on the target Windows computer.
+3. Double-click Set-Up-HealthFlow-Offline.cmd and choose Yes when Windows asks for permission.
+   It checks the copied setup code, installs HealthFlow, connects it to HealthFlow Cloud, checks that it works, and opens the offline POS.
+   If you copied the code on another computer, it asks you to paste it into the window.
+4. Sign in to HealthFlow Offline. The first sync starts on its own. After the first sync, supported operations can continue offline.
+
+If something stops, the window says what to fix. Run Set-Up-HealthFlow-Offline.cmd again; it is safe to repeat and keeps the data.
+
+Manual steps (only if you need them)
+- Install-HealthFlow.cmd (in the local-branch-server folder) installs without connecting to the cloud.
+- Connect-To-HealthFlow-Cloud.cmd (same folder) connects an installed computer from the copied setup code.
 
 Included
 - local-branch-server application files
@@ -143,8 +149,8 @@ Included
 - production node_modules
 - portable Node.js runtime in local-branch-server/runtime/node
 - bundled NSSM service helper
-- one-click elevated installer
-- Connect-To-HealthFlow-Cloud.cmd: connects this computer to HealthFlow Cloud from the block copied in Branch Sync Setup
+- Set-Up-HealthFlow-Offline.cmd: the one-button setup (install, connect to the cloud, check, open the POS)
+- Install-HealthFlow.cmd and Connect-To-HealthFlow-Cloud.cmd: the same steps one at a time
 
 Important
 - Do not expose port 4780 to the public internet.
@@ -229,6 +235,13 @@ if (-not (Test-Path -LiteralPath $offlineIndex -PathType Leaf)) {
 }
 
 Write-InstallerReadme -Destination $stagingRoot -Version $version
+
+# The one-button launcher sits at the top of the ZIP so it is the first thing seen after extracting.
+$setupLauncher = Join-Path $stagingServerDir 'Set-Up-HealthFlow-Offline.cmd'
+if (-not (Test-Path -LiteralPath $setupLauncher -PathType Leaf)) {
+  throw "One-button launcher is missing: $setupLauncher"
+}
+Copy-Item -LiteralPath $setupLauncher -Destination (Join-Path $stagingRoot 'Set-Up-HealthFlow-Offline.cmd') -Force
 
 Write-Host 'Creating installer ZIP...'
 Compress-Archive -Path (Join-Path $stagingRoot '*') -DestinationPath $zipPath -Force
