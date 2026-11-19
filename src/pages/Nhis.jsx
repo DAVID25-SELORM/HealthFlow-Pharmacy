@@ -1,6 +1,7 @@
 import { cccProviderName, cccResultMessage } from '../utils/cccResultMessage'
 import NhisExportBlockerClaims from '../components/NhisExportBlockerClaims'
 import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from '../utils/nhiaAttendanceValues'
+import { formatNhiaDisplayDate } from '../utils/nhiaDisplayDates'
 import NhisCccDuplicateReview from '../components/NhisCccDuplicateReview'
 import { useCxfRecordingIssue } from '../hooks/useCxfRecordingIssue'
 import { nhisDuplicateMemberKey, isVoidedNhisClaim } from '../utils/nhisCccDuplicate'
@@ -8113,7 +8114,7 @@ const Nhis = () => {
                         <div className="patient-meta">Pending NHIA CCC verification</div>
                       )}
                       <div className="patient-meta nhia-eligibility-dates" aria-label="NHIA eligibility period">
-                        <span>NHIA eligibility: {claimForm.nhiaEligibilityStartDate || 'Not returned'} to {claimForm.nhiaEligibilityEndDate || 'Not returned'}</span>
+                        <span>NHIA Start Date: {formatNhiaDisplayDate(claimForm.nhiaEligibilityStartDate)} - End Date: {formatNhiaDisplayDate(claimForm.nhiaEligibilityEndDate)}</span>
                       </div>
                     </div>
                     {isHospital && (
@@ -8152,16 +8153,16 @@ const Nhis = () => {
                       />
                     </div>
                     <div className="form-group">
-                      <label>AuthID</label>
+                      <label>Attendance ID (AuthID)</label>
                       <input
                         className="form-input"
                         value={claimForm.authId}
-                        placeholder="NeHFAMS AuthID"
+                        placeholder="NeHFAMS Attendance ID"
                         onChange={(e) => setClaimForm((p) => ({ ...p, authId: e.target.value }))}
                       />
                     </div>
                     <div className="form-group">
-                      <label>Auth Type</label>
+                      <label>Attendance Type</label>
                       <select
                         className="form-input"
                         value={claimForm.authType || 'NHIS'}
@@ -8195,6 +8196,7 @@ const Nhis = () => {
                         <option value="yes">Yes</option>
                         <option value="no">No</option>
                       </select>
+                      <small className="patient-meta">As NHIA reported for this Attendance ID. A later attendance for the same CCC can show No.</small>
                     </div>
                     <div className="form-group">
                       <label>Verification Status</label>
