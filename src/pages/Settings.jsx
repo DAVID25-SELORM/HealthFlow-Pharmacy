@@ -36,6 +36,12 @@ import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials
 import { createOnlineBackup, downloadOnlineBackup, listOnlineBackups } from '../services/backupService'
 import { requestAppConfirmation } from '../utils/appDialog'
 import { getOnlinePaymentSettings, saveOnlinePaymentSettings } from '../services/paymentService'
+import {
+  DEFAULT_SETTINGS_GROUP,
+  getAvailableSettingsGroups,
+  resolveSettingsGroup,
+  settingsGroupFromHash,
+} from './settingsSections'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -1539,6 +1545,28 @@ const Settings = () => {
     }
   }
 
+  const availableGroups = getAvailableSettingsGroups({ isAdmin })
+  const [requestedGroup, setRequestedGroup] = useState(() => (
+    settingsGroupFromHash(typeof window !== 'undefined' ? window.location.hash : '') || DEFAULT_SETTINGS_GROUP
+  ))
+  const activeGroup = resolveSettingsGroup(requestedGroup, availableGroups)
+  const activeGroupInfo = availableGroups.find((group) => group.id === activeGroup) || availableGroups[0]
+
+  useEffect(() => {
+    const openFromHash = () => {
+      const hash = window.location.hash
+      const group = settingsGroupFromHash(hash)
+      if (group) setRequestedGroup(group)
+      const anchorId = hash.replace(/^#/, '')
+      if (anchorId) {
+        window.setTimeout(() => document.getElementById(anchorId)?.scrollIntoView?.({ block: 'start' }), 0)
+      }
+    }
+    openFromHash()
+    window.addEventListener('hashchange', openFromHash)
+    return () => window.removeEventListener('hashchange', openFromHash)
+  }, [loading])
+
   if (loading) {
     return (
       <div className="settings-page">
@@ -1558,8 +1586,27 @@ const Settings = () => {
 
       {error && <div className="settings-alert">{error}</div>}
 
-      <div className="settings-grid">
-        <div className="settings-card">
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="Settings sections">
+          {availableGroups.map((group) => (
+            <button
+              key={group.id}
+              type="button"
+              className={`settings-nav-item${group.id === activeGroup ? ' active' : ''}`}
+              aria-current={group.id === activeGroup ? 'page' : undefined}
+              onClick={() => setRequestedGroup(group.id)}
+            >
+              {group.label}
+            </button>
+          ))}
+        </nav>
+        <div className="settings-content">
+          <div className="settings-section-head">
+            <h2>{activeGroupInfo.label}</h2>
+            <p>{activeGroupInfo.description}</p>
+          </div>
+      <div className="settings-grid" data-group={activeGroup}>
+        <div className="settings-card sg-facility">
           <div className="card-icon">
             <Building size={24} />
           </div>
@@ -1925,7 +1972,7 @@ const Settings = () => {
         </div>
 
         {isAdmin && organization && (
-          <div className="settings-card">
+          <div className="settings-card sg-facility">
             <div className="card-icon">
               <Globe size={24} />
             </div>
@@ -1992,7 +2039,7 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card">
+          <div className="settings-card sg-branches">
             <div className="card-icon">
               <GitBranch size={24} />
             </div>
@@ -2022,7 +2069,7 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card settings-backup-card">
+          <div className="settings-card settings-backup-card sg-data">
             <div className="card-icon">
               <Database size={24} />
             </div>
@@ -2207,7 +2254,7 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card settings-payment-card">
+          <div className="settings-card settings-payment-card sg-integrations">
             <div className="card-icon">
               <CreditCard size={24} />
             </div>
@@ -2363,7 +2410,7 @@ const Settings = () => {
         )}
 
         {isAdmin && organization?.can_use_nhis && (
-          <div className="settings-card">
+          <div className="settings-card sg-integrations">
             <div className="card-icon">
               <KeyRound size={24} />
             </div>
@@ -3145,7 +3192,7 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card branch-card">
+          <div className="settings-card branch-card sg-branches">
             <div className="card-icon">
               <Lock size={24} />
             </div>
@@ -3285,7 +3332,7 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card branch-card">
+          <div className="settings-card branch-card sg-branches">
             <div className="card-icon">
               <GitBranch size={24} />
             </div>
@@ -3465,7 +3512,7 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card settings-staff-onboarding-card">
+          <div className="settings-card settings-staff-onboarding-card sg-staff">
             <div className="card-icon">
               <UserPlus size={24} />
             </div>
@@ -3646,7 +3693,7 @@ const Settings = () => {
           </div>
         )}
 
-        <div className="settings-card settings-offline-pin-card" id="offline-access">
+        <div className="settings-card settings-offline-pin-card sg-account" id="offline-access">
           <div className="card-icon">
             <KeyRound size={24} />
           </div>
@@ -3695,7 +3742,7 @@ const Settings = () => {
         </div>
 
         {isAdmin && (
-          <div className="settings-card settings-user-management-card">
+          <div className="settings-card settings-user-management-card sg-staff">
             <div className="card-icon">
               <User size={24} />
             </div>
@@ -3990,7 +4037,7 @@ const Settings = () => {
           </div>
         )}
 
-        <div className="settings-card">
+        <div className="settings-card sg-account">
           <div className="card-icon">
             <Bell size={24} />
           </div>
@@ -4001,7 +4048,7 @@ const Settings = () => {
           </p>
         </div>
 
-        <div className="settings-card">
+        <div className="settings-card sg-account">
           <div className="card-icon">
             <Lock size={24} />
           </div>
@@ -4011,7 +4058,7 @@ const Settings = () => {
           </p>
         </div>
 
-        <div className="settings-card">
+        <div className="settings-card sg-account">
           <div className="card-icon">
             <Palette size={24} />
           </div>
@@ -4019,6 +4066,8 @@ const Settings = () => {
           <p>
             Facility logo, document headers, footers, and theme colors can be managed from Facility Branding.
           </p>
+        </div>
+      </div>
         </div>
       </div>
 
