@@ -2893,6 +2893,10 @@
   .nhis-claim-body {
     grid-template-columns: 1fr;
     overflow-y: auto;
+    /* Size each pane to its content. Without this the two rows shrink to fit the modal,
+       the member form spills out of its pane and the Medicines pane paints over the
+       CCC code and its Generate/Validate button. The body scrolls instead. */
+    grid-auto-rows: max-content;
   }
 
   .nhis-claim-left,

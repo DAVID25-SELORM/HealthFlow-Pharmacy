@@ -755,12 +755,25 @@
   .purchase-modal-body {
     grid-template-columns: 1fr;
     overflow-y: auto;
+    /* Size each pane to its content so the items list is not squeezed to one row
+       and the Add item panel is reached by scrolling the modal. */
+    grid-auto-rows: max-content;
   }
 
   .purchase-modal-left {
     border-right: none;
     border-bottom: 1px solid var(--gray-200);
-    max-height: 50vh;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .purchase-items-section {
+    flex: 0 0 auto;
+    max-height: 45vh;
+  }
+
+  .purchase-modal-right {
+    overflow: visible;
   }
 
   .purchases-controls {
