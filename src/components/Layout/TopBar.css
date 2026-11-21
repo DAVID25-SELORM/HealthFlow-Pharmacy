@@ -505,3 +505,10 @@
     gap: 0.35rem;
   }
 }
+
+/* Phones use the bottom bar instead of the menu button / drawer. */
+@media (max-width: 768px) {
+  .topbar-menu-btn {
+    display: none;
+  }
+}

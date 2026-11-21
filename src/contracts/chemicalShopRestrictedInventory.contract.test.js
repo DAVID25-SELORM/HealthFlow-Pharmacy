@@ -19,7 +19,7 @@ const settingsPage = fs.readFileSync('src/pages/Settings.jsx', 'utf8')
 const signupPage = fs.readFileSync('src/pages/Signup.jsx', 'utf8')
 const tenantAdminPage = fs.readFileSync('src/pages/TenantAdmin.jsx', 'utf8')
 const tenantSignup = fs.readFileSync('supabase/functions/tenant-signup/index.ts', 'utf8')
-const sidebar = fs.readFileSync('src/components/Layout/Sidebar.jsx', 'utf8')
+const sidebar = fs.readFileSync('src/components/Layout/useNavigationItems.js', 'utf8')
 const appRoutes = fs.readFileSync('src/App.jsx', 'utf8')
 
 describe('Chemical Shop restricted inventory contract', () => {

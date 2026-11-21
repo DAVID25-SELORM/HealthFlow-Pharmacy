@@ -6,14 +6,23 @@
   min-width: 0;
 }
 
+.app-layout {
+  --sidebar-width: 272px;
+}
+
+.app-layout.sidebar-collapsed {
+  --sidebar-width: 88px;
+}
+
 .main-content {
   flex: 1;
-  margin-left: 250px;
+  margin-left: var(--sidebar-width);
   min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--gray-50);
-  width: calc(100% - 250px);
+  width: calc(100% - var(--sidebar-width));
+  transition: margin-left 0.2s ease, width 0.2s ease;
 }
 
 .page-content {
@@ -56,14 +65,21 @@
   }
 }
 
+/* Phones: the bottom bar takes the place of the drawer, so keep content clear of it. */
+@media (max-width: 768px) {
+  .page-content {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 @media (max-width: 640px) {
   .page-content {
-    padding: 0.75rem;
+    padding: 0.75rem 0.75rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
 @media (max-width: 380px) {
   .page-content {
-    padding: 0.6rem;
+    padding: 0.6rem 0.6rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
   }
 }

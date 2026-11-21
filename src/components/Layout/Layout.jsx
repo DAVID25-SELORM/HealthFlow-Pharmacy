@@ -12,8 +12,39 @@ import FacilityContactReporter from '../FacilityContactReporter'
 import SubscriptionNotice from '../SubscriptionNotice'
 import ClaimExportAlerts from '../ClaimExportAlerts'
 import Sidebar from './Sidebar'
+import BottomNav from './BottomNav'
 import TopBar from './TopBar'
 import './Layout.css'
+
+const SIDEBAR_COLLAPSED_KEY = 'healthflow.sidebar.collapsed'
+const DESKTOP_QUERY = '(min-width: 1025px)'
+
+const readCollapsedPreference = () => {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+const useIsDesktop = () => {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(DESKTOP_QUERY).matches
+      : true
+  )
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined
+    const query = window.matchMedia(DESKTOP_QUERY)
+    const handleChange = (event) => setIsDesktop(event.matches)
+    setIsDesktop(query.matches)
+    query.addEventListener?.('change', handleChange)
+    return () => query.removeEventListener?.('change', handleChange)
+  }, [])
+
+  return isDesktop
+}
 
 const pageTitles = {
   '/search': 'General search',
@@ -34,7 +65,23 @@ const pageTitles = {
 
 const Layout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [collapsePreference, setCollapsePreference] = useState(readCollapsedPreference)
+  const isDesktop = useIsDesktop()
+  // The slim icon rail is a computer feature; tablets and phones keep their drawer / bottom bar.
+  const isSidebarCollapsed = collapsePreference && isDesktop
   const location = useLocation()
+
+  const toggleSidebarCollapsed = () => {
+    setCollapsePreference((current) => {
+      const next = !current
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next))
+      } catch {
+        // The preference simply is not remembered.
+      }
+      return next
+    })
+  }
   const pageTitle = pageTitles[location.pathname] || 'HealthFlow'
 
   useEffect(() => {
@@ -77,11 +124,16 @@ const Layout = () => {
   }, [])
 
   return (
-    <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''}`}>
+    <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Seo noindex title="Workspace" />
       <ProductionMetricsMonitor />
       <FacilityContactReporter />
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        collapsed={isSidebarCollapsed}
+        onToggleCollapsed={toggleSidebarCollapsed}
+      />
       <button
         type="button"
         className={`sidebar-backdrop ${isSidebarOpen ? 'visible' : ''}`}
@@ -100,6 +152,7 @@ const Layout = () => {
           <Outlet />
         </main>
       </div>
+      <BottomNav />
     </div>
   )
 }

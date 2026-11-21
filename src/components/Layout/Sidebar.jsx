@@ -1,173 +1,146 @@
-import { Link, NavLink } from 'react-router-dom'
-import {
-  X,
-  Home,
-  Package,
-  ShoppingCart,
-  Users,
-  ClipboardList,
-  PackageSearch,
-  BarChart3,
-  Wallet,
-  Settings,
-  ShieldCheck,
-  List,
-  Truck,
-  Building2,
-  HeartPulse,
-  Activity,
-  RefreshCcw,
-  MonitorCheck,
-  Trash2,
-  LifeBuoy,
-  Gauge,
-  Download,
-  ShieldAlert,
-  ArrowRightLeft,
-} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { useTenant } from '../../context/TenantContext'
-import {
-  ACCOUNTING_ROLES,
-  ACTIVITY_LOG_ROLES,
-  CLAIMS_ROLES,
-  DASHBOARD_ROLES,
-  EPHARMACY_ROLES,
-  INVENTORY_ROLES,
-  NHIS_ROLES,
-  OFFLINE_SYNC_ROLES,
-  PATIENT_CARE_ROLES,
-  PATIENT_ROLES,
-  REPORT_ROLES,
-  SALES_ROLES,
-  SETTINGS_ROLES,
-  SYSTEM_HEALTH_ROLES,
-  hasRole,
-} from '../../utils/roles'
-import { getFacilityLogo, getFacilityName } from '../../utils/facilityBranding'
+import { getRoleLabel } from '../../utils/roleLabels'
 import { preloadRouteModule } from '../../routes/routeModules'
+import { useNavigationItems } from './useNavigationItems'
 import './Sidebar.css'
 
-const Sidebar = ({ isOpen, onClose }) => {
-  const {
-    role,
-    assignedRoles,
-    canManageInventory,
-    canViewReports,
-    canManageClaims,
-    canManagePurchases,
-    canProcessSales,
-    canManagePatients,
-    canManageAccounting,
-    canManageEpharmacy,
-    canViewActivityLog,
-    canManageRestrictedInventory,
-  } = useAuth()
-  const { organization, canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
-  const isChemicalShop = organization?.organization_type === 'chemical_shop'
-  const facilityName = getFacilityName(organization)
-  const facilityLogo = getFacilityLogo(organization) || '/app-logo-display.jpg'
+const GROUPS_STORAGE_KEY = 'healthflow.sidebar.groups'
 
-  const menuItems = [
-    {
-      path: '/dashboard',
-      icon: Home,
-      label: role === 'super_admin' ? 'Platform Dashboard' : 'Dashboard',
-      roles: DASHBOARD_ROLES,
-    },
-    { path: '/billing', icon: Wallet, label: 'Payments', roles: ['admin', 'super_admin'], allow: assignedRoles?.includes('admin') },
-    { path: '/export-notifications', icon: ClipboardList, label: 'Export notifications', roles: ['admin', 'super_admin'], allow: assignedRoles?.includes('admin') },
-    { path: '/inventory', icon: Package, label: 'Inventory', roles: INVENTORY_ROLES, allow: canManageInventory },
-    { path: '/stock-transfers', icon: ArrowRightLeft, label: 'Stock Transfers', roles: INVENTORY_ROLES, allow: canManageInventory, featureAllowed: !isChemicalShop },
-    { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES, allow: canProcessSales },
-    { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES, allow: canManagePatients, featureAllowed: !isChemicalShop },
-    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims, featureAllowed: canUseClaims },
-    {
-      path: '/purchases',
-      icon: Truck,
-      label: 'Purchases',
-      roles: ['admin', 'super_admin'],
-      allow: canManagePurchases,
-      featureAllowed: canUsePurchases,
-    },
-    {
-      path: '/reorder',
-      icon: PackageSearch,
-      label: 'Reorder Centre',
-      roles: ['admin', 'super_admin'],
-      allow: canManagePurchases,
-      featureAllowed: canUsePurchases,
-    },
-    { path: '/e-pharmacy', icon: Building2, label: 'E-Pharmacy', roles: EPHARMACY_ROLES, allow: canManageEpharmacy },
-    { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: !isChemicalShop && canUseNhis },
-    { path: '/patient-care', icon: Activity, label: 'Patient Care', roles: PATIENT_CARE_ROLES, featureAllowed: !isChemicalShop },
-    { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
-    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, allow: canManageAccounting, featureAllowed: canUseAccounting },
-    { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
-    { path: '/recycle-bin', icon: Trash2, label: 'Recycle Bin', roles: ['admin', 'super_admin'] },
-    {
-      path: '/restricted-inventory',
-      icon: ShieldAlert,
-      label: 'Restricted Inventory',
-      roles: ['super_admin', 'compliance_admin', 'compliance_officer'],
-      allow: canManageRestrictedInventory,
-      featureAllowed:
-        isChemicalShop ||
-        ['super_admin', 'compliance_admin', 'compliance_officer'].includes(role),
-    },
-    { path: '/system-health', icon: MonitorCheck, label: 'System Health', roles: SYSTEM_HEALTH_ROLES },
-    { path: '/diagnostics', icon: Gauge, label: 'Diagnostics', roles: ['super_admin'] },
-    { path: '/offline-installer-releases', icon: Download, label: 'Installer Releases', roles: ['super_admin'] },
-    { path: '/offline-sync', icon: RefreshCcw, label: 'Offline Sync', roles: OFFLINE_SYNC_ROLES },
-    { path: '/support', icon: LifeBuoy, label: 'Support', roles: ['admin', 'super_admin', 'pharmacist', 'cashier', 'assistant'] },
-    { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
-    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES, allow: canViewActivityLog },
-  ]
+const readStoredGroups = () => {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GROUPS_STORAGE_KEY) || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
 
-  const visibleItems = menuItems.filter(
-    (item) => item.featureAllowed !== false && (hasRole(role, item.roles) || item.allow)
-  )
+const getInitials = (name) => {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return 'U'
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
+}
+
+const Sidebar = ({ isOpen, onClose, collapsed = false, onToggleCollapsed }) => {
+  const { groups, facilityName, facilityLogo, organization } = useNavigationItems()
+  const { displayName, role } = useAuth()
+  const { pathname } = useLocation()
+  const [storedGroups, setStoredGroups] = useState(readStoredGroups)
+
+  const activeGroupId = useMemo(() => {
+    const match = groups.find((group) =>
+      group.items.some((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))
+    )
+    return match?.id || null
+  }, [groups, pathname])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(storedGroups))
+    } catch {
+      // The menu still works without remembering which groups were folded.
+    }
+  }, [storedGroups])
+
+  const isGroupOpen = (group) =>
+    collapsed || group.id === activeGroupId || (storedGroups[group.id] ?? group.defaultOpen)
+
+  const toggleGroup = (group) => {
+    setStoredGroups((current) => ({ ...current, [group.id]: !(current[group.id] ?? group.defaultOpen) }))
+  }
 
   return (
-    <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
-      <div className="sidebar-logo">
+    <aside className={`sidebar ${isOpen ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`}>
+      <div className="sidebar-brand">
         <img src={facilityLogo} alt={`${facilityName} logo`} className="sidebar-brand-logo" />
+        <div className="sidebar-brand-text">
+          <span className="sidebar-brand-name">{facilityName}</span>
+          <span className="sidebar-brand-sub">{organization?.organization_type || 'Facility'} workspace</span>
+        </div>
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+        </button>
         <button type="button" className="sidebar-close" onClick={onClose} aria-label="Close menu">
           <X size={18} />
         </button>
       </div>
 
-      <nav className="sidebar-nav">
-        {visibleItems.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            onClick={onClose}
-            onMouseEnter={() => preloadRouteModule(item.path)}
-            onFocus={() => preloadRouteModule(item.path)}
-            onTouchStart={() => preloadRouteModule(item.path)}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-          >
-            <item.icon size={20} />
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
+      <nav className="sidebar-nav" aria-label="Main navigation">
+        {groups.map((group) => {
+          const open = isGroupOpen(group)
+          return (
+            <div className="nav-group" key={group.id}>
+              {collapsed ? (
+                <div className="nav-group-divider" aria-hidden="true" />
+              ) : (
+                <button
+                  type="button"
+                  className="nav-group-toggle"
+                  aria-expanded={open}
+                  aria-controls={`nav-group-${group.id}`}
+                  onClick={() => toggleGroup(group)}
+                  disabled={group.id === activeGroupId}
+                >
+                  <span className="nav-group-label">{group.label}</span>
+                  {!open && <span className="nav-group-count">{group.items.length}</span>}
+                  {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+              )}
+              {open && (
+                <div className="nav-group-items" id={`nav-group-${group.id}`}>
+                  {group.items.map((item) => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={onClose}
+                      onMouseEnter={() => preloadRouteModule(item.path)}
+                      onFocus={() => preloadRouteModule(item.path)}
+                      onTouchStart={() => preloadRouteModule(item.path)}
+                      className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                      title={collapsed ? item.label : undefined}
+                      aria-label={collapsed ? item.label : undefined}
+                    >
+                      <item.icon size={20} />
+                      <span className="nav-item-label">{item.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </nav>
 
       <div className="sidebar-footer">
-        <p>{facilityName}</p>
-        <p className="developer">{organization?.organization_type || 'Facility'} workspace</p>
-        <Link className="sidebar-terms-link" to="/terms" onClick={onClose}>
-          Terms and Conditions
-        </Link>
-        <a
-          className="sidebar-powered-by"
-          href="https://neondigitaltechnologies.com"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Powered by Daventra Technologies
-        </a>
+        <div className="sidebar-user">
+          <span className="sidebar-user-avatar" aria-hidden="true">{getInitials(displayName)}</span>
+          <span className="sidebar-user-text">
+            <span className="sidebar-user-name">{displayName}</span>
+            <span className="sidebar-user-role">{getRoleLabel(role)}</span>
+          </span>
+        </div>
+        <div className="sidebar-footer-links">
+          <Link className="sidebar-terms-link" to="/terms" onClick={onClose}>
+            Terms and Conditions
+          </Link>
+          <a
+            className="sidebar-powered-by"
+            href="https://neondigitaltechnologies.com"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Powered by Daventra Technologies
+          </a>
+        </div>
       </div>
     </aside>
   )
