@@ -22,6 +22,8 @@ import {
 } from '../services/tenantAdminService'
 import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 import { requestAppPrompt } from '../utils/appDialog'
+import { setOrganizationInterfaceFlag } from '../services/interfaceFlagService'
+import { INTERFACE_FLAGS, usesClassicNavigation } from '../utils/interfaceFlags'
 import './TenantAdmin.css'
 
 const blankPharmacy = {
@@ -298,6 +300,7 @@ const TenantAdmin = () => {
       canUseAccounting: Boolean(org.can_use_accounting),
       canUseMultiBranch: Boolean(org.can_use_multi_branch),
       canUseOfflineInstaller: Boolean(org.can_use_offline_installer),
+      classicNavigation: usesClassicNavigation(org),
       billingNotes: org.billing_notes || '',
       lastPaymentAt: org.last_payment_at ? org.last_payment_at.split('T')[0] : '',
       nextPaymentDueAt: org.next_payment_due_at ? org.next_payment_due_at.split('T')[0] : '',
@@ -372,6 +375,9 @@ const TenantAdmin = () => {
         Boolean(updatedOrganization?.can_use_offline_installer) !== Boolean(editForm.canUseOfflineInstaller)
       ) {
         throw new Error('Module privileges were not saved. Deploy the latest tenant-signup function and try again.')
+      }
+      if (Boolean(editForm.classicNavigation) !== usesClassicNavigation(editOrg)) {
+        await setOrganizationInterfaceFlag(editOrg.id, INTERFACE_FLAGS.classicNavigation, Boolean(editForm.classicNavigation))
       }
       notify(`${editForm.name} updated successfully`, 'success')
       closeEdit()
@@ -1453,6 +1459,14 @@ const TenantAdmin = () => {
                         onChange={(e) => setEditForm({ ...editForm, canUseOfflineInstaller: e.target.checked })}
                       />
                       Offline installer downloads
+                    </label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.classicNavigation)}
+                        onChange={(e) => setEditForm({ ...editForm, classicNavigation: e.target.checked })}
+                      />
+                      Classic menu (switches off the new navigation for this facility)
                     </label>
                   </div>
                   <div className="tenant-form-group full-width">

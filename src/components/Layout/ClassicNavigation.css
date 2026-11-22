@@ -1,0 +1,24 @@
+/* Classic navigation, switched on for one pharmacy by the platform administrator.
+   No phone bottom bar: the page does not need to keep clear of it, and the
+   top-bar menu button opens the side menu on phones again. */
+@media (max-width: 768px) {
+  .app-layout.classic-nav .topbar-menu-btn {
+    display: inline-flex;
+  }
+
+  .app-layout.classic-nav .page-content {
+    padding-bottom: 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-layout.classic-nav .page-content {
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .app-layout.classic-nav .page-content {
+    padding: 0.6rem;
+  }
+}

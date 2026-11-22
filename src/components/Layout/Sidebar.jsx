@@ -24,7 +24,7 @@ const getInitials = (name) => {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
 }
 
-const Sidebar = ({ isOpen, onClose, collapsed = false, onToggleCollapsed }) => {
+const Sidebar = ({ isOpen, onClose, collapsed = false, onToggleCollapsed, classic = false }) => {
   const { groups, facilityName, facilityLogo, organization } = useNavigationItems()
   const { displayName, role } = useAuth()
   const { pathname } = useLocation()
@@ -60,22 +60,42 @@ const Sidebar = ({ isOpen, onClose, collapsed = false, onToggleCollapsed }) => {
           <span className="sidebar-brand-name">{facilityName}</span>
           <span className="sidebar-brand-sub">{organization?.organization_type || 'Facility'} workspace</span>
         </div>
-        <button
-          type="button"
-          className="sidebar-collapse-btn"
-          onClick={onToggleCollapsed}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-        </button>
+        {!classic && (
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+          </button>
+        )}
         <button type="button" className="sidebar-close" onClick={onClose} aria-label="Close menu">
           <X size={18} />
         </button>
       </div>
 
       <nav className="sidebar-nav" aria-label="Main navigation">
-        {groups.map((group) => {
+        {classic && (
+          <div className="nav-group-items">
+            {groups.flatMap((group) => group.items).map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={onClose}
+                onMouseEnter={() => preloadRouteModule(item.path)}
+                onFocus={() => preloadRouteModule(item.path)}
+                onTouchStart={() => preloadRouteModule(item.path)}
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              >
+                <item.icon size={20} />
+                <span className="nav-item-label">{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+        )}
+        {!classic && groups.map((group) => {
           const open = isGroupOpen(group)
           return (
             <div className="nav-group" key={group.id}>

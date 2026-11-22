@@ -151,4 +151,20 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
     expect(onToggle).toHaveBeenCalled()
   })
+
+  it('classic mode lists every allowed screen in one plain list with no folding or rail', () => {
+    renderSidebar({ classic: true })
+    expect(screen.queryByRole('button', { name: /Business/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Collapse sidebar/ })).toBeNull()
+    expect(screen.getByRole('link', { name: /Inventory/ })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Reports/ })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Settings/ })).toBeTruthy()
+  })
+
+  it('classic mode still hides screens the user may not open', () => {
+    auth.value = { ...fullAccess, role: 'cashier', assignedRoles: [], canManageInventory: false, canViewReports: false, canManageClaims: false, canManagePurchases: false, canManagePatients: false, canManageAccounting: false, canManageEpharmacy: false, canViewActivityLog: false }
+    renderSidebar({ classic: true })
+    expect(screen.getByRole('link', { name: /Sales/ })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Inventory/ })).toBeNull()
+  })
 })

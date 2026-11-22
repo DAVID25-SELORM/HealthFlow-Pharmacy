@@ -35,6 +35,7 @@ const ORGANIZATION = {
   can_use_accounting: true,
   can_use_multi_branch: false,
   can_use_offline_installer: false,
+  interface_flags: {},
 }
 
 const BRANCH = { id: 'branch-guard-1', name: 'Main Branch', code: 'MAIN', is_main: true }
@@ -142,9 +143,9 @@ const CORS_HEADERS = {
   'access-control-expose-headers': '*',
 }
 
-const TABLE_ROWS = (roleName) => ({
+const TABLE_ROWS = (roleName, organization = ORGANIZATION) => ({
   users: [buildProfile(roleName)],
-  organizations: [ORGANIZATION],
+  organizations: [organization],
   branches: [BRANCH],
   drugs: MEDICINES,
   medicines: MEDICINES,
@@ -153,8 +154,9 @@ const TABLE_ROWS = (roleName) => ({
 })
 
 // Installs the fake cloud on a Playwright page and signs the given role in.
-export const installFakeBackend = async (page, roleName = 'admin') => {
-  const rows = TABLE_ROWS(roleName)
+// `interfaceFlags` are the per-pharmacy interface switches, e.g. { classic_navigation: true }.
+export const installFakeBackend = async (page, roleName = 'admin', { interfaceFlags = {} } = {}) => {
+  const rows = TABLE_ROWS(roleName, { ...ORGANIZATION, interface_flags: interfaceFlags })
   const session = buildSession(roleName)
   const profile = buildProfile(roleName)
 

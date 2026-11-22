@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { isSupabaseConfigured } from '../../lib/supabase'
+import { useTenant } from '../../context/TenantContext'
+import { usesClassicNavigation } from '../../utils/interfaceFlags'
 import { getPharmacyThemeSettings } from '../../services/settingsService'
 import {
   applyFacilityTheme,
@@ -15,6 +17,7 @@ import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import TopBar from './TopBar'
 import './Layout.css'
+import './ClassicNavigation.css'
 
 const SIDEBAR_COLLAPSED_KEY = 'healthflow.sidebar.collapsed'
 const DESKTOP_QUERY = '(min-width: 1025px)'
@@ -67,8 +70,11 @@ const Layout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [collapsePreference, setCollapsePreference] = useState(readCollapsedPreference)
   const isDesktop = useIsDesktop()
+  const { organization } = useTenant()
+  // The platform administrator can switch the new navigation off for one pharmacy.
+  const classicNavigation = usesClassicNavigation(organization)
   // The slim icon rail is a computer feature; tablets and phones keep their drawer / bottom bar.
-  const isSidebarCollapsed = collapsePreference && isDesktop
+  const isSidebarCollapsed = !classicNavigation && collapsePreference && isDesktop
   const location = useLocation()
 
   const toggleSidebarCollapsed = () => {
@@ -124,7 +130,7 @@ const Layout = () => {
   }, [])
 
   return (
-    <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''} ${classicNavigation ? 'classic-nav' : ''}`}>
       <Seo noindex title="Workspace" />
       <ProductionMetricsMonitor />
       <FacilityContactReporter />
@@ -133,6 +139,7 @@ const Layout = () => {
         onClose={() => setIsSidebarOpen(false)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebarCollapsed}
+        classic={classicNavigation}
       />
       <button
         type="button"
@@ -152,7 +159,7 @@ const Layout = () => {
           <Outlet />
         </main>
       </div>
-      <BottomNav />
+      {!classicNavigation && <BottomNav />}
     </div>
   )
 }
