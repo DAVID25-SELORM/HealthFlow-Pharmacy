@@ -10846,3 +10846,58 @@ export const exportNhisMonthlyFile = async (yearMonth, options = {}) =>
 export const exportNhisMonthlyCSV = async (yearMonth, options = {}) =>
   await exportNhisMonthlyFile(yearMonth, { ...options, format: 'csv' })
 
+
+/**
+ * Latest telephone number saved on a previous claim for this member, so staff
+ * do not retype it. Returns '' when none is found or the lookup is unavailable
+ * (offline, or the column has not been added yet).
+ */
+export const getLatestNhisPatientPhone = async ({ memberNo } = {}) => {
+  const member = normalizeNhiaMemberNumber(memberNo)
+  if (!member || shouldUseBranchServer()) return ''
+  try {
+    const { data, error } = await supabase
+      .from('nhis_claims')
+      .select('patient_phone')
+      .eq('member_no', member)
+      .not('patient_phone', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (error) return ''
+    return normalizeText(data?.[0]?.patient_phone)
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Saves the telephone number entered on the serving form. This is a separate
+ * step after the claim itself has been saved, so a problem here can never stop
+ * a claim from being saved or served. The linked patient record, when there is
+ * one, is updated too.
+ */
+export const saveNhisClaimPatientPhone = async (claimId, phone, { patientId = '' } = {}) => {
+  const value = normalizeText(phone)
+  if (!claimId || !value) return
+  const { error } = await supabase
+    .from('nhis_claims')
+    .update({ patient_phone: value })
+    .eq('id', claimId)
+  if (error) throw error
+
+  if (patientId) {
+    const { error: patientError } = await supabase
+      .from('patients')
+      .update({ phone: value })
+      .eq('id', patientId)
+    if (patientError) throw patientError
+  }
+
+  await tryLogAuditEvent({
+    eventType: 'nhis_claim.patient_phone_saved',
+    entityType: 'nhis_claims',
+    entityId: claimId,
+    action: 'update',
+    details: { patient_record_updated: Boolean(patientId) },
+  })
+}

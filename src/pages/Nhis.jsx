@@ -2,6 +2,7 @@ import { cccProviderName, cccResultMessage } from '../utils/cccResultMessage'
 import NhisExportBlockerClaims from '../components/NhisExportBlockerClaims'
 import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from '../utils/nhiaAttendanceValues'
 import { formatNhiaDisplayDate } from '../utils/nhiaDisplayDates'
+import { isLikelyGhanaPhone, normalizePhoneInput } from '../utils/ghanaPhone'
 import NhisCccDuplicateReview from '../components/NhisCccDuplicateReview'
 import { useCxfRecordingIssue } from '../hooks/useCxfRecordingIssue'
 import { nhisDuplicateMemberKey, isVoidedNhisClaim } from '../utils/nhisCccDuplicate'
@@ -118,12 +119,14 @@ import {
   validateNhisMedicineDurationInput,
   getNhisPrescriptionSignedUrl,
   generateHostedNhiaCcCode,
+  getLatestNhisPatientPhone,
   getNhiaApiSettings,
   isNhisDuplicateClaimsError,
   isNhisReadinessClaimsError,
   listActiveNhisDuplicateReviews,
   reviewNhisDuplicateGroup,
   revokeNhisDuplicateReview,
+  saveNhisClaimPatientPhone,
   startClaimItBridgeQueueAutoSync,
 } from '../services/nhisService'
 import { countUnrecordedClaims, retryCxfRecording } from '../services/claimitLifecycleService'
@@ -473,6 +476,7 @@ const makeBlankClaim = () => ({
   gender:            '',
   dateOfBirth:       '',
   patientAddress:    '',
+  patientPhone:      '',
   childWeightKg:     '',
   cccNo:             '',
   authId:            '',
@@ -1652,6 +1656,7 @@ const Nhis = () => {
   const lastLookedUpMemberRef = useRef('')
   // The member number the patient/attendance details currently on the form were loaded for.
   const detailsMemberRef = useRef('')
+  const phoneLookupMemberRef = useRef('')
   useEffect(() => { detailsMemberRef.current = '' }, [editingClaim?.id, showNewClaimModal])
   const cccFormRevisionRef = useRef(0)
   useEffect(() => {
@@ -3197,6 +3202,17 @@ const Nhis = () => {
     resetPatientActiveMedicationState,
   ])
 
+  // Fill the telephone box from the member's most recent claim that has one.
+  // It never overwrites a number the user has already typed.
+  const fillPatientPhoneFromEarlierClaim = (memberNo) => {
+    phoneLookupMemberRef.current = memberNo || ''
+    if (!memberNo) return
+    void getLatestNhisPatientPhone({ memberNo }).then((found) => {
+      if (!found || phoneLookupMemberRef.current !== memberNo) return
+      setClaimForm((prev) => (prev.patientPhone ? prev : { ...prev, patientPhone: found }))
+    })
+  }
+
   const selectPatient = (patient) => {
     const memberNo = getPatientMemberNumber(patient)
     const normalizedMemberNo = normalizeNhiaMemberNumber(memberNo)
@@ -3220,8 +3236,10 @@ const Nhis = () => {
       memberNo:    normalizedMemberNo,
       cardType:    getNhiaLookupCardType(normalizedMemberNo),
       hin:         getPatientHin(patient),
+      patientPhone: normalizePhoneInput(getPatientPhone(patient)),
     }))
     detailsMemberRef.current = normalizedMemberNo
+    fillPatientPhoneFromEarlierClaim(normalizedMemberNo)
     setSelectedClaimPatient(selectedPatient)
     setPatientSearch(formatPatientLookupName(selectedPatient))
     setPatientSearchResults([])
@@ -3246,6 +3264,7 @@ const Nhis = () => {
   }
 
   const clearSelectedPatient = () => {
+    phoneLookupMemberRef.current = ''
     setSelectedClaimPatient(null)
     setReturnAlertOverride(null)
     resetPatientActiveMedicationState()
@@ -3523,6 +3542,9 @@ const Nhis = () => {
     })
     setMedForm(makeBlankMedicine())
     setEditingMedicineIndex(null)
+    if (!normalizePhoneInput(claim.patient_phone)) {
+      fillPatientPhoneFromEarlierClaim(normalizeNhiaMemberNumber(claim.member_no || ''))
+    }
     setClaimForm({
       patientId: claim.patient_id || '',
       memberNo: claim.member_no || '',
@@ -3534,6 +3556,7 @@ const Nhis = () => {
       gender: claim.gender || '',
       dateOfBirth: normalizeDateOfBirthValue(claim.date_of_birth),
       patientAddress: claim.patient_address || '',
+      patientPhone: normalizePhoneInput(claim.patient_phone),
       childWeightKg: claim.child_weight_kg ?? '',
       cccNo: claim.ccc_no || '',
       attendanceRequestId: claim.ccc_attendance_request_id || claim.attendanceRequestId || '',
@@ -5042,6 +5065,26 @@ const Nhis = () => {
         })
       }
 
+      // The telephone number is saved as its own step after the claim, so a problem
+      // here can never stop a claim from being saved or served.
+      let phoneSaveNote = ''
+      const phoneToSave = normalizePhoneInput(claimForm.patientPhone)
+      if (phoneToSave && savedClaimId && phoneToSave !== normalizePhoneInput(editingClaim?.patient_phone)) {
+        if (isBranchServerEnabled) {
+          phoneSaveNote = 'The telephone number was not saved because this device is working offline. Add it again when the claim is open online.'
+        } else {
+          try {
+            const recordPhone = normalizePhoneInput(getPatientPhone(selectedClaimPatient || {}))
+            await saveNhisClaimPatientPhone(savedClaimId, phoneToSave, {
+              patientId: claimForm.patientId && recordPhone !== phoneToSave ? claimForm.patientId : '',
+            })
+          } catch (phoneError) {
+            console.warn('Unable to save the NHIS patient telephone number:', phoneError)
+            phoneSaveNote = 'The claim was saved, but the telephone number could not be saved. Open the claim and add it again.'
+          }
+        }
+      }
+
       const wasReadinessCorrection = readinessClaimIssues.length > 0
       setShowNewClaimModal(false)
       if (!editingClaim) {
@@ -5069,6 +5112,7 @@ const Nhis = () => {
       }
       setReadinessActiveClaimId('')
       notify(successMessage, 'success')
+      if (phoneSaveNote) notify(phoneSaveNote, 'warning')
       await refreshClaimsOverview()
       // Claim-save triggers may register a newly typed doctor/facility.
       // Refresh the register so the next claim can select the saved record.
@@ -5094,6 +5138,7 @@ const Nhis = () => {
   }
 
   const resetClaimModal = () => {
+    phoneLookupMemberRef.current = ''
     setClaimForm(makeBlankClaim())
     setClaimMedicines([])
     setClaimServices([])
@@ -8051,6 +8096,29 @@ const Nhis = () => {
                             return
                           }
                           setClaimForm((p) => ({ ...p, dateOfBirth: normalized }))
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="nhis-patient-phone">Patient Telephone</label>
+                      <input
+                        id="nhis-patient-phone"
+                        type="tel"
+                        className="form-input"
+                        value={claimForm.patientPhone || ''}
+                        inputMode="tel"
+                        autoComplete="off"
+                        placeholder="e.g. 024 123 4567 (optional)"
+                        onChange={(e) => setClaimForm((p) => ({ ...p, patientPhone: e.target.value }))}
+                        onBlur={(e) => {
+                          const value = normalizePhoneInput(e.target.value)
+                          setClaimForm((p) => ({ ...p, patientPhone: value }))
+                          if (value && !isLikelyGhanaPhone(value)) {
+                            notify('That telephone number does not look like a Ghana number. Check it before saving, or leave it as it is.', 'warning')
+                          }
                         }}
                       />
                     </div>
