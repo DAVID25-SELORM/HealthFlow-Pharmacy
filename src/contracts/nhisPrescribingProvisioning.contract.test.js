@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync } from '../test/readFileSyncLf.js'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 

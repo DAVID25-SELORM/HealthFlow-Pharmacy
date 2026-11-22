@@ -42,3 +42,5 @@ local-branch-server/data/
 *.sw?
 .vercel
 .claude/
+playwright-report/
+test-results/

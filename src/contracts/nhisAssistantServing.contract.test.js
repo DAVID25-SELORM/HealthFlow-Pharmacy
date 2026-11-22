@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync } from '../test/readFileSyncLf.js'
 import { resolve } from 'node:path'
 
 const source = readFileSync(resolve(process.cwd(), 'src/pages/Nhis.jsx'), 'utf8')

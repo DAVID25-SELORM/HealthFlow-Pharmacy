@@ -25,6 +25,15 @@ For each checked area, list rule IDs from `docs/production-business-rules.md` an
 - [ ] `npm run verify:production-baseline` passes
 - [ ] Rollback steps documented
 
+## Screens and scope
+
+- [ ] Every changed file relates to this request (anything unrelated is listed here and explained)
+- [ ] `npm run test:e2e` passes (phone, tablet and computer)
+- [ ] The preview was looked at on a phone before merge when the change touches layout
+- [ ] The owner said "merge" for this specific pull request
+
+See `docs/change-safety-rules.md`.
+
 ## Authorization
 
 Business-logic changes require explicit product-owner approval. Include the approval reference here, or write `behavior-preserving`.

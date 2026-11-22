@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync } from '../test/readFileSyncLf.js'
 
 const readSource = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
