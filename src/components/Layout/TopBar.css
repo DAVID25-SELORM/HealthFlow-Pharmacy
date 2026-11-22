@@ -432,8 +432,19 @@
     font-size: 0.8rem;
   }
 
+  /* Anchor the panel to the whole top bar, not the bell, so it stays on screen. */
+  .topbar-alerts {
+    position: static;
+  }
+
   .alerts-panel {
-    right: -0.5rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    top: calc(100% + 0.25rem);
+    width: auto;
+    max-height: min(60vh, 28rem);
+    overflow-y: auto;
+    box-sizing: border-box;
   }
 }
 
