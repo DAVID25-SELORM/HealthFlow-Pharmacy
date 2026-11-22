@@ -2,6 +2,7 @@ import { getCurrentSupabaseUser, supabase } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
 import { isNetworkRequestError } from '../utils/requestErrors'
 import { logRequestFailure } from '../utils/requestDiagnostics'
+import { maskAuditPersonalData } from '../utils/auditMasking'
 
 const MAX_PENDING_AUDIT_EVENTS = 100
 const pendingAuditEvents = []
@@ -61,12 +62,12 @@ const sanitizeAuditDetails = (details) => {
     return details || {}
   }
 
-  return Object.fromEntries(
+  return maskAuditPersonalData(Object.fromEntries(
     Object.entries(details).map(([key, value]) => [
       key,
       AUDIT_UUID_DETAIL_KEYS.has(key) ? uuidOrNull(value) : value,
     ])
-  )
+  ))
 }
 
 const debugAuditPayload = (payload) => {

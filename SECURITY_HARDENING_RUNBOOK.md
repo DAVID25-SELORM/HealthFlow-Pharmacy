@@ -217,3 +217,20 @@ If a pharmacy account or local server token is suspected compromised:
 5. Review audit logs and sync outbox.
 6. Force users to reset passwords.
 7. Confirm no service role key was exposed.
+
+## 11. Personal Data And Data At Rest
+
+See `docs/data-protection-and-privacy.md` for what personal data is held, who can read it,
+the known gaps, and the decisions still open. See `docs/security-verification-checklist.md`
+for the live checks (two-factor sign-in, live security rules, backup restore).
+
+Branch server computers hold patient, claim and sales data in a SQLite file that is not
+encrypted by the application. Turn on Windows disk encryption (BitLocker or Device
+Encryption), keep the recovery key away from the computer, and check it with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check-disk-encryption.ps1
+```
+
+Audit-trail entries keep only the last three characters of phone, member and card numbers
+and drop diagnosis, notes, addresses and dates of birth.

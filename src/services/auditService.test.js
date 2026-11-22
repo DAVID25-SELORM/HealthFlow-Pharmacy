@@ -42,6 +42,35 @@ import {
   uuidOrNull,
 } from './auditService'
 
+describe('auditService personal data', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.getCurrentSupabaseUser.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111', email: 'claims@example.com' })
+    mocks.maybeSingle.mockResolvedValue({ data: { organization_id: '' }, error: null })
+    mocks.rpc.mockResolvedValue({ error: null })
+    mocks.getStoredActiveRole.mockReturnValue('')
+  })
+
+  it('masks phone and member numbers and removes clinical text before the entry is saved', async () => {
+    await logAuditEvent({
+      eventType: 'nhis_claim.update',
+      entityType: 'nhis_claims',
+      entityId: '22222222-2222-4222-8222-222222222222',
+      action: 'update',
+      details: { patient_name: 'Ama Mensah', member_no: '123456789', phone: '0247654381', diagnosis_details: 'asthma', status: 'served' },
+    })
+
+    const sent = mocks.rpc.mock.calls[0][1].p_details
+    expect(sent).toEqual({
+      patient_name: 'Ama Mensah',
+      member_no: '******789',
+      phone: '*******381',
+      diagnosis_details: '[REDACTED]',
+      status: 'served',
+    })
+  })
+})
+
 describe('auditService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
