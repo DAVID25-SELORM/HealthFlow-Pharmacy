@@ -7,7 +7,7 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "17ff58ef59bef1f70de4a091b62a6f8ace69591ee048b3dfcf1ee08b8ad6cdd6",
+    "src/services/nhisService.js": "f25337c49762f6d78fb4c8bf371c5a46c569ca50bb120d5ab6d45d10cf5f9a94",
     "src/context/AuthContext.jsx": "bc9a4238845d4f0254f58f623197b2404da98def22740d4389c0dabe8f1c1249",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
@@ -87,5 +87,10 @@
     "date": "2026-11-14",
     "impactReport": "docs/country-code-ghana-card-edge-impact-2026-11-14.md",
     "description": "Edge functions accept a foreign national Ghana Card (ISO country code + 10 digits) in place of GHA; validation only, not deployed."
+  },
+  "pendingNhisServingPatientPhone": {
+    "date": "2026-11-22",
+    "impactReport": "docs/nhis-serving-patient-phone-impact-2026-11-22.md",
+    "description": "Optional patient telephone on the NHIS serving form, saved on the claim as a separate step after the claim; two new functions appended to nhisService, no existing function edited."
   }
 }
