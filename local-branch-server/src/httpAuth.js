@@ -94,7 +94,10 @@ const parseSignedSession = (token) => {
   }
 }
 
-const getIdentityClient = () => {
+// The staff profile is read with the staff member's own access token. The shared sync key is only a
+// publishable key, so without the token the cloud's row-level security hides the profile row and the lookup
+// comes back empty (no error), which is what made every staff sign-in on the branch server fail.
+const getIdentityClient = (accessToken = '') => {
   if (!config.supabaseUrl || !config.supabaseSyncKey) {
     throw new Error('Branch staff authorization requires SUPABASE_URL and SUPABASE_SYNC_KEY.')
   }
@@ -104,6 +107,9 @@ const getIdentityClient = () => {
       autoRefreshToken: false,
       persistSession: false,
     },
+    ...(accessToken
+      ? { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
+      : {}),
   })
 }
 
@@ -222,7 +228,7 @@ const createBranchUserSession = (profile, activeRole, { offline = false } = {}) 
 }
 
 export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
-  const client = getIdentityClient()
+  const client = getIdentityClient(accessToken)
   const { data: userData, error: userError } = await client.auth.getUser(accessToken)
   if (userError || !userData?.user?.id) {
     throw new Error('Unable to verify the signed-in staff member.')
@@ -230,6 +236,13 @@ export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
 
   const { data: profile, error: profileError } = await getStaffAuthorizationProfile(client, userData.user.id)
   if (profileError) throw profileError
+  if (!profile) {
+    const missingProfile = new Error(
+      'No staff profile was found for this account. Sign in with a staff account of this facility.'
+    )
+    missingProfile.status = 403
+    throw missingProfile
+  }
   const permissionNames = [
     'can_refund', 'can_manage_inventory', 'can_view_reports', 'can_manage_claims',
     'can_manage_purchases', 'can_process_sales', 'can_manage_patients',

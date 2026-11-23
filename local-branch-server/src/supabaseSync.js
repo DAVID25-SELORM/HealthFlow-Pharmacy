@@ -658,9 +658,15 @@ const importAll = async (
   return imported
 }
 
-const importOptionalAll = async (supabase, table, importer, select = '*') => {
+const importOptionalAll = async (
+  supabase,
+  table,
+  importer,
+  select = '*',
+  organizationColumn = 'organization_id'
+) => {
   try {
-    return await importAll(supabase, table, importer, select)
+    return await importAll(supabase, table, importer, select, organizationColumn)
   } catch (error) {
     if (['42P01', 'PGRST205'].includes(error?.code)) {
       return 0
@@ -740,15 +746,20 @@ export const pullReferenceData = async () => {
           '*, claim_items (*)'
         ),
         importAll(supabase, 'nhis_drugs', (page) => importOfflineRecords('nhis_drugs', page)),
+        // Shared national catalogues: they have no organization_id column, so they are not filtered by organisation.
         importOptionalAll(
           supabase,
           'nhis_clinical_rules',
-          (page) => importOfflineRecords('nhis_clinical_rules', page)
+          (page) => importOfflineRecords('nhis_clinical_rules', page),
+          '*',
+          null
         ),
         importOptionalAll(
           supabase,
           'nhia_tariff_items',
-          (page) => importOfflineRecords('nhia_tariff_items', page)
+          (page) => importOfflineRecords('nhia_tariff_items', page),
+          '*',
+          null
         ),
         importOptionalAll(
           supabase,
