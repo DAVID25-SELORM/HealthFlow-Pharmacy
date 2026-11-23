@@ -130,6 +130,20 @@ describe('Windows production installer scripts', () => {
     expect(connect).toContain('& powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript')
   })
 
+  it('shows the end of the server log on screen when the first health check never passes', () => {
+    // The cause of a server that will not start is in the server's own log. The installer prints it, with
+    // secret values hidden, right before it reports the failure, so nobody has to go looking for the file.
+    const installer = readScript('install-service.ps1').replace(/\r\n/g, '\n')
+
+    expect(installer).toContain('function Show-ServerStartupProblem {')
+    expect(installer).toMatch(/Show-ServerStartupProblem\n\s*throw 'HealthFlow service installation completed, but production health checks did not pass\.'/)
+    expect(installer).toContain("'offline-server-error.log'")
+    expect(installer).toContain('<hidden>')
+    expect(installer).toContain('passphrase')
+    // Only the last health check is printed, not one block per attempt.
+    expect(installer).toContain('$healthOutput = & powershell')
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')

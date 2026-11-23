@@ -352,6 +352,34 @@ IconIndex=220
   Write-Host "Created desktop shortcut: $shortcutPath"
 }
 
+function Show-ServerStartupProblem {
+  # Called when the health check never passed. Says what the service is doing and shows the end of the
+  # server's own error log, so the cause is on screen instead of in a file nobody opens.
+  # It must never hide the real error, so anything that goes wrong in here is only reported.
+  try {
+    Write-Host ''
+    Write-Host '--- Why HealthFlow Offline did not start ---' -ForegroundColor Yellow
+    $serverService = Get-Service -Name 'HealthFlowOfflineServer' -ErrorAction SilentlyContinue
+    Write-Host ('Service status: ' + $(if ($serverService) { $serverService.Status } else { 'not installed' }))
+    foreach ($logName in @('offline-server-error.log', 'offline-server.log')) {
+      $logPath = Join-Path $logsDir $logName
+      if (-not (Test-Path -LiteralPath $logPath)) { continue }
+      $logLines = @(Get-Content -LiteralPath $logPath -Tail 40 -Encoding UTF8 -ErrorAction Stop | Where-Object { $_ -and $_.Trim() })
+      if ($logLines.Count -eq 0) { continue }
+      Write-Host "Last lines of ${logPath}:"
+      foreach ($logLine in ($logLines | Select-Object -Last 15)) {
+        # Never print a secret: hide the value of any TOKEN, SECRET, KEY, PASSWORD or PASSPHRASE setting.
+        Write-Host ('  ' + ($logLine -replace '(?i)((?:token|secret|key|password|passphrase)\w*\s*[=:]\s*)\S+', '$1<hidden>'))
+      }
+      Write-Host "Full log: $logPath"
+      return
+    }
+    Write-Host "No server log lines were found in $logsDir."
+  } catch {
+    Write-Host "Could not read the server log: $($_.Exception.Message)"
+  }
+}
+
 $nssm = Ensure-Nssm
 $node = Resolve-CommandPath -CommandName 'node.exe' -ProvidedPath $NodePath
 Assert-NodeVersion -Node $node
@@ -435,13 +463,18 @@ Write-Host 'Waiting for the installed service to become healthy...'
 $healthPassed = $false
 for ($attempt = 1; $attempt -le 15; $attempt += 1) {
   Start-Sleep -Seconds 2
-  & powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript -InstallRoot $InstallRoot -BaseUrl $serverUrl
+  $healthOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript -InstallRoot $InstallRoot -BaseUrl $serverUrl
   if ($LASTEXITCODE -eq 0) {
     $healthPassed = $true
     break
   }
 }
+# Show only the last health check, not one block per attempt.
+if ($healthOutput) {
+  foreach ($healthLine in $healthOutput) { Write-Host $healthLine }
+}
 if (-not $healthPassed) {
+  Show-ServerStartupProblem
   throw 'HealthFlow service installation completed, but production health checks did not pass.'
 }
 
