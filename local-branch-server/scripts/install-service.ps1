@@ -255,6 +255,24 @@ function Assert-NodeVersion {
   Write-Host "Node.js runtime: $rawVersion"
 }
 
+function Stop-ExistingServer {
+  # Running the installer again over a working install: the old server is still running and Windows will not let
+  # its files (node.exe, the SQLite native module, nssm.exe) be overwritten, so stop it before anything is copied.
+  # A fresh install has no service and nothing to stop.
+  $existingService = Get-Service -Name 'HealthFlowOfflineServer' -ErrorAction SilentlyContinue
+  if ($existingService -and $existingService.Status -ne 'Stopped') {
+    Write-Host 'Stopping the running HealthFlow Offline Server so its files can be updated...'
+    Stop-Service -Name 'HealthFlowOfflineServer' -Force -ErrorAction SilentlyContinue
+    try { $existingService.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30)) } catch { }
+  }
+  # Anything still running from the install folder (for example a server process left behind) also holds files.
+  $installPrefix = $installServerDir.TrimEnd('\') + '\'
+  Get-CimInstance -ClassName Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installPrefix, [System.StringComparison]::OrdinalIgnoreCase) } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Sleep -Seconds 1
+}
+
 function Remove-OldStartupTasks {
   $taskNames = @('HealthFlow Branch Server', 'HealthFlow Branch Sync Worker')
   foreach ($taskName in $taskNames) {
@@ -337,6 +355,7 @@ IconIndex=220
 $nssm = Ensure-Nssm
 $node = Resolve-CommandPath -CommandName 'node.exe' -ProvidedPath $NodePath
 Assert-NodeVersion -Node $node
+Stop-ExistingServer
 
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null

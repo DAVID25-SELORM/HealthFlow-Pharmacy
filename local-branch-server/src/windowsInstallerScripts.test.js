@@ -102,6 +102,20 @@ describe('Windows production installer scripts', () => {
     expect(trust.indexOf('$existingDevice = $null')).toBeLessThan(trust.indexOf('Get-WorkstationEnrollment -ServerUrl'))
   })
 
+  it('stops the old server before copying files over a working install', () => {
+    // The running server holds node.exe, the SQLite native module and nssm.exe open, so copying the server
+    // folder over it failed with "The process cannot access the file ... because it is being used by another
+    // process" and the install "did not finish". The old server is now stopped first.
+    const installer = readScript('install-service.ps1').replace(/\r\n/g, '\n')
+
+    expect(installer).toContain('function Stop-ExistingServer {')
+    expect(installer).toContain("Stop-Service -Name 'HealthFlowOfflineServer' -Force")
+    expect(installer).toContain('StartsWith($installPrefix')
+    // It runs before any file is copied into the install folder.
+    expect(installer.indexOf('\nStop-ExistingServer\n')).toBeGreaterThan(0)
+    expect(installer.indexOf('\nStop-ExistingServer\n')).toBeLessThan(installer.indexOf('\nCopy-BranchServer\n'))
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')
