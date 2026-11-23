@@ -97,8 +97,20 @@ Start-Sleep -Seconds 5
 
 Write-Host ''
 Write-Host 'Checking the server...'
-& (Join-Path $serverDir 'scripts\health-check.ps1') -InstallRoot $InstallRoot
-$healthExit = $LASTEXITCODE
+# The server needs a few seconds to start after the restart, so check up to 20 times and show only the last
+# check. The child process keeps the check's own output, so it can be captured.
+$healthScript = Join-Path $serverDir 'scripts\health-check.ps1'
+$healthExit = 1
+$healthOutput = $null
+for ($attempt = 1; $attempt -le 20; $attempt += 1) {
+  $healthOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript -InstallRoot $InstallRoot
+  $healthExit = $LASTEXITCODE
+  if ($healthExit -eq 0) { break }
+  Start-Sleep -Seconds 3
+}
+if ($healthOutput) {
+  foreach ($healthLine in $healthOutput) { Write-Host $healthLine }
+}
 
 Write-Host ''
 if ($healthExit -eq 0) {

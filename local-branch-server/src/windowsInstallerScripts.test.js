@@ -116,6 +116,20 @@ describe('Windows production installer scripts', () => {
     expect(installer.indexOf('\nStop-ExistingServer\n')).toBeLessThan(installer.indexOf('\nCopy-BranchServer\n'))
   })
 
+  it('checks the server at its real address after connecting to the cloud, and waits for it to start', () => {
+    // After the cloud connection is saved the service restarts. The check ran at once against
+    // http://localhost:4780, but a server with a certificate only speaks HTTPS, so it failed with
+    // "The connection was closed unexpectedly" and the setup reported that it "did not finish".
+    const health = readScript('health-check.ps1').replace(/\r\n/g, '\n')
+    const connect = readScript('connect-to-cloud.ps1').replace(/\r\n/g, '\n')
+
+    expect(health).toContain("[string]$BaseUrl = ''")
+    expect(health).not.toContain("[string]$BaseUrl = 'http://localhost:4780'")
+    expect(health).toContain('$BaseUrl = if ($tlsConfigured) { "https://${lanHostname}:$port" } else { "http://localhost:$port" }')
+    expect(connect).toContain('for ($attempt = 1; $attempt -le 20; $attempt += 1)')
+    expect(connect).toContain('& powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript')
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')

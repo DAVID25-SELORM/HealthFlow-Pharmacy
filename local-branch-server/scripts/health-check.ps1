@@ -1,5 +1,5 @@
 param(
-  [string]$BaseUrl = 'http://localhost:4780',
+  [string]$BaseUrl = '',
   [string]$InstallRoot = 'C:\HealthFlowLocal',
   [string]$BranchToken = ''
 )
@@ -42,6 +42,20 @@ function Get-EnvValue {
 
 if (-not $BranchToken) {
   $BranchToken = Get-EnvValue -Name 'BRANCH_SERVER_TOKEN'
+}
+
+if (-not $BaseUrl) {
+  # Once its certificate is set up the server only speaks HTTPS (and answers plain HTTP by closing the
+  # connection), so work out the address from its settings instead of assuming http://localhost.
+  $port = Get-EnvValue -Name 'PORT'
+  if (-not $port) { $port = '4780' }
+  $lanHostname = Get-EnvValue -Name 'HEALTHFLOW_LAN_HOSTNAME'
+  $pfxPath = Get-EnvValue -Name 'HEALTHFLOW_TLS_PFX_PATH'
+  $certPath = Get-EnvValue -Name 'HEALTHFLOW_TLS_CERT_PATH'
+  $tlsConfigured = [bool]$lanHostname -and (
+    ($pfxPath -and (Test-Path -LiteralPath $pfxPath)) -or ($certPath -and (Test-Path -LiteralPath $certPath))
+  )
+  $BaseUrl = if ($tlsConfigured) { "https://${lanHostname}:$port" } else { "http://localhost:$port" }
 }
 
 Write-Host 'HealthFlow Offline Branch Server Health Check'
