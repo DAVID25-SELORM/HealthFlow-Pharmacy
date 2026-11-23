@@ -51,7 +51,38 @@ const wellStocked = {
   unit: 'tablet', supplier: 'MedSupply Ltd', category: 'supplement', status: 'active',
 }
 
+const nhisCatalogueRow = (id) => ({
+  id, name: `NHIS catalogue item ${id}`, quantity: 0, reorder_level: 0, batch_number: `NHIS-${id}`,
+  cost_price: 0, unit: 'tablet', supplier: '', category: 'medicine', status: 'active',
+})
+
 describe('ReorderCentre', () => {
+  it('counts out-of-stock medicines that have no reorder level or target instead of listing them, and does not request their sales history', async () => {
+    mocks.getAllDrugs.mockResolvedValue([outOfStock, critical, lowNoSupplier, wellStocked, nhisCatalogueRow('a'), nhisCatalogueRow('b')])
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+
+    expect(screen.queryByText('NHIS catalogue item a')).not.toBeInTheDocument()
+    expect(screen.queryByText('NHIS catalogue item b')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('2 out-of-stock medicines have no reorder level or target stock level set')
+
+    // The Out of stock counter is only the medicines that can actually be ordered.
+    const summary = screen.getByText('Out of stock', { selector: '.reorder-summary-label' }).closest('.reorder-summary-card')
+    expect(summary.querySelector('.reorder-summary-value')).toHaveTextContent('1')
+
+    const requestedIds = mocks.loadReorderInsights.mock.calls[0][0]
+    expect(requestedIds).toEqual(expect.arrayContaining(['d-out', 'd-critical', 'd-low']))
+    expect(requestedIds).not.toContain('a')
+    expect(requestedIds).not.toContain('b')
+  })
+
+  it('still lists an out-of-stock medicine once a reorder level or target is set on it', async () => {
+    mocks.getAllDrugs.mockResolvedValue([{ ...nhisCatalogueRow('c'), reorder_level: 0, target_stock_level: 12 }])
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('NHIS catalogue item c')).toBeInTheDocument())
+    expect(screen.queryByText(/have no reorder level/)).not.toBeInTheDocument()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.useAuth.mockReturnValue({ canManagePurchases: true })
