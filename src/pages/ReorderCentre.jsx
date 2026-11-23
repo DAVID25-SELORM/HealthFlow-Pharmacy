@@ -31,6 +31,7 @@ import {
   getStockSeverityBadgeClass,
   getStockSeverityLabel,
   groupReorderItemsBySupplier,
+  hasRestockTarget,
   needsReorderAttention,
 } from '../utils/reorderCentre'
 import {
@@ -67,6 +68,9 @@ const fmtCurrency = (value) =>
   `GHS ${Number(value || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 // Days of stock left, unknown last (an unknown speed must never outrank a known emergency).
+// Needs restocking AND has something to restock to (see hasRestockTarget).
+const isActionableReorder = (drug) => needsReorderAttention(drug) && hasRestockTarget(drug)
+
 const daysOrInfinity = (row) => (row.velocity.daysOfStock == null ? Number.POSITIVE_INFINITY : row.velocity.daysOfStock)
 
 const ReorderCentre = () => {
@@ -114,7 +118,7 @@ const ReorderCentre = () => {
 
       // Velocity and price history are extras: if they cannot be loaded the page still works.
       try {
-        const ids = drugRows.filter(needsReorderAttention).map((drug) => drug.id)
+        const ids = drugRows.filter(isActionableReorder).map((drug) => drug.id)
         setInsights(ids.length ? await loadReorderInsights(ids, USAGE_WINDOW_DAYS) : new Map())
         setInsightsUnavailable(false)
       } catch (insightsError) {
@@ -128,7 +132,7 @@ const ReorderCentre = () => {
       setTransferOptions(new Map())
       if (branchId && !profile?.branch_id) {
         try {
-          const ids = drugRows.filter(needsReorderAttention).map((drug) => drug.id)
+          const ids = drugRows.filter(isActionableReorder).map((drug) => drug.id)
           if (ids.length) setTransferOptions(await loadBranchTransferOptions(branchId, ids))
         } catch (transferError) {
           console.warn('Unable to load branch transfer options:', transferError)
@@ -167,7 +171,7 @@ const ReorderCentre = () => {
 
   const rows = useMemo(() => {
     return drugs
-      .filter(needsReorderAttention)
+      .filter(isActionableReorder)
       .map((drug) => {
         const alreadyOnOrder = openOrderQuantities.get(drug.id)?.quantity || 0
         const severity = getStockSeverity(drug)
@@ -200,6 +204,12 @@ const ReorderCentre = () => {
         }
       })
   }, [drugs, openOrderQuantities, insights, transferOptions, assignedSuppliers, expiryWindowDays])
+
+  // Out-of-stock medicines with no reorder level or target: counted, not listed (nothing to suggest).
+  const unplannedCount = useMemo(
+    () => drugs.filter((drug) => needsReorderAttention(drug) && !hasRestockTarget(drug)).length,
+    [drugs]
+  )
 
   const supplierOptions = useMemo(
     () => [...new Set(rows.map((row) => row.supplier).filter(Boolean))].sort(),
@@ -351,6 +361,14 @@ const ReorderCentre = () => {
         <div className="reorder-centre-note" role="status">
           Sales speed and price history could not be loaded, so days of stock and price changes are hidden.
           Everything else still works.
+        </div>
+      )}
+
+      {unplannedCount > 0 && !loading && (
+        <div className="reorder-centre-note" role="status">
+          {unplannedCount.toLocaleString('en-GH')} out-of-stock {unplannedCount === 1 ? 'medicine has' : 'medicines have'} no
+          reorder level or target stock level set, so no order quantity can be suggested and {unplannedCount === 1 ? 'it is' : 'they are'} not
+          listed here. Set a reorder level in Inventory to include {unplannedCount === 1 ? 'it' : 'them'}.
         </div>
       )}
 

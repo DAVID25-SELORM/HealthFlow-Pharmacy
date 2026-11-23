@@ -56,6 +56,11 @@ export const getStockSeverity = (drug) => {
 
 export const needsReorderAttention = (drug) => getStockSeverity(drug) !== STOCK_SEVERITY.OK
 
+// A medicine with a reorder level of 0 and no target has nothing to restock to, so no quantity can
+// ever be suggested for it. Typical case: NHIS catalogue rows (stock 0, level 0). The Reorder Centre
+// counts these instead of listing them, so the medicines that can actually be ordered stay visible.
+export const hasRestockTarget = (drug) => getEffectiveTargetStockLevel(drug) > 0
+
 // suggested = max(0, target - current - already on order). Never negative.
 export const getSuggestedReorderQuantity = (drug, alreadyOnOrder = 0) => {
   const target = getEffectiveTargetStockLevel(drug)

@@ -8,6 +8,7 @@ import {
   getStockSeverity,
   getSuggestedReorderQuantity,
   groupReorderItemsBySupplier,
+  hasRestockTarget,
   isReorderRelevantDrug,
   needsReorderAttention,
 } from './reorderCentre'
@@ -145,5 +146,18 @@ describe('groupReorderItemsBySupplier', () => {
     expect(groups.map((g) => g.supplier)).toEqual(['Accord Pharma', 'MedSupply Ltd', null])
     expect(groups.find((g) => g.supplier === 'MedSupply Ltd').items).toHaveLength(2)
     expect(groups.find((g) => g.supplier === null).items).toHaveLength(1)
+  })
+})
+
+describe('hasRestockTarget', () => {
+  it('is false for a medicine with a reorder level of 0 and no target (nothing to restock to)', () => {
+    expect(hasRestockTarget(drug({ quantity: 0, reorder_level: 0 }))).toBe(false)
+    expect(hasRestockTarget(drug({ quantity: 0, reorder_level: 0, target_stock_level: 0 }))).toBe(false)
+  })
+
+  it('is true when a reorder level or a target is set, or the level was never recorded (default 10)', () => {
+    expect(hasRestockTarget(drug({ quantity: 0, reorder_level: 20 }))).toBe(true)
+    expect(hasRestockTarget(drug({ quantity: 0, reorder_level: 0, target_stock_level: 30 }))).toBe(true)
+    expect(hasRestockTarget(drug({ quantity: 0, reorder_level: undefined }))).toBe(true)
   })
 })
