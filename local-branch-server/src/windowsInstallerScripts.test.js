@@ -89,6 +89,19 @@ describe('Windows production installer scripts', () => {
     expect(installer).not.toContain('NSSM is not bundled with this installer.')
   })
 
+  it('keeps an earlier workstation enrollment when the installer is run again', () => {
+    // An enrollment token works once. The first install used it, so running the installer again got
+    // "Workstation enrollment token is invalid." at the very last step and the install "did not finish".
+    const trust = readScript('install-workstation-trust.ps1').replace(/\r\n/g, '\n')
+
+    expect(trust).toContain('function Get-WorkstationEnrollment {')
+    expect(trust).toContain('[int]$_.Exception.Response.StatusCode')
+    expect(trust).toContain('$statusCode -eq 401 -and $hasDevice')
+    expect(trust).toContain('already enrolled with this branch server')
+    // The earlier enrollment is read before the enrollment request, and still written only once.
+    expect(trust.indexOf('$existingDevice = $null')).toBeLessThan(trust.indexOf('Get-WorkstationEnrollment -ServerUrl'))
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')

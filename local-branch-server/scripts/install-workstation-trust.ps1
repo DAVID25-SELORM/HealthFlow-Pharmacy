@@ -27,16 +27,44 @@ $certificate = Import-Certificate `
   -FilePath $rootCertificate `
   -CertStoreLocation 'Cert:\LocalMachine\Root'
 
+$deviceDirectory = Join-Path $env:ProgramData 'HealthFlow'
+$devicePath = Join-Path $deviceDirectory 'workstation.json'
+$existingDevice = $null
+if (Test-Path -LiteralPath $devicePath) {
+  try { $existingDevice = Get-Content -LiteralPath $devicePath -Raw | ConvertFrom-Json } catch { $existingDevice = $null }
+}
+
+function Get-WorkstationEnrollment {
+  param([string]$ServerUrl, [string]$EnrollmentToken, $ExistingDevice)
+  try {
+    $response = Invoke-RestMethod `
+      -Uri "$ServerUrl/api/workstations/enroll" `
+      -Method Post `
+      -ContentType 'application/json' `
+      -Body (@{
+        enrollmentToken = $EnrollmentToken
+        computerName = $env:COMPUTERNAME
+      } | ConvertTo-Json) `
+      -TimeoutSec 15
+    return $response.data
+  } catch {
+    # An enrollment token works once. When this computer was already enrolled by an earlier install, running
+    # the installer again must not fail: keep using that enrollment.
+    $statusCode = 0
+    if ($_.Exception.Response) { $statusCode = [int]$_.Exception.Response.StatusCode }
+    $hasDevice = $ExistingDevice -and $ExistingDevice.workstationId -and $ExistingDevice.workstationSecret
+    if ($statusCode -eq 401 -and $hasDevice) {
+      Write-Host 'This computer is already enrolled with this branch server; keeping its existing enrollment.'
+      return [pscustomobject]@{ id = $ExistingDevice.workstationId; secret = $ExistingDevice.workstationSecret }
+    }
+    throw
+  }
+}
+
 $enrollmentToken = (Get-Content -LiteralPath $enrollmentTokenFile -Raw).Trim()
-$enrollment = Invoke-RestMethod `
-  -Uri "$serverUrl/api/workstations/enroll" `
-  -Method Post `
-  -ContentType 'application/json' `
-  -Body (@{
-    enrollmentToken = $enrollmentToken
-    computerName = $env:COMPUTERNAME
-  } | ConvertTo-Json) `
-  -TimeoutSec 15
+$enrollment = [pscustomobject]@{
+  data = (Get-WorkstationEnrollment -ServerUrl $serverUrl -EnrollmentToken $enrollmentToken -ExistingDevice $existingDevice)
+}
 if (-not $enrollment.data.id -or -not $enrollment.data.secret) {
   throw 'The branch server did not return workstation credentials.'
 }
@@ -54,9 +82,7 @@ IconIndex=220
 "@
 Set-Content -LiteralPath $shortcutPath -Value $shortcut -Encoding ASCII
 
-$deviceDirectory = Join-Path $env:ProgramData 'HealthFlow'
 New-Item -ItemType Directory -Force -Path $deviceDirectory | Out-Null
-$devicePath = Join-Path $deviceDirectory 'workstation.json'
 if (-not (Test-Path -LiteralPath $devicePath)) {
   @{
     id = [Guid]::NewGuid().ToString()
