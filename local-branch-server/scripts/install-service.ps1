@@ -193,7 +193,7 @@ function Set-EnvValue {
 
 function Initialize-BootstrapConfiguration {
   $branchToken = Get-EnvValue -Name 'BRANCH_SERVER_TOKEN'
-  if (-not $branchToken -or $branchToken -match 'change[-_ ]?me|placeholder|your[-_ ]') {
+  if (-not $branchToken -or $branchToken -match 'change[-_ ]?(me|this)|placeholder|your[-_ ]') {
     # RandomNumberGenerator.Fill does not exist in Windows PowerShell 5.1; Create().GetBytes works everywhere.
     $bytes = New-Object byte[] 32
     $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -203,7 +203,7 @@ function Initialize-BootstrapConfiguration {
   }
   foreach ($name in @('ORGANIZATION_ID', 'BRANCH_ID', 'BRANCH_SYNC_TOKEN', 'SUPABASE_URL', 'SUPABASE_SYNC_KEY')) {
     $value = Get-EnvValue -Name $name
-    if ($value -match 'change[-_ ]?me|placeholder|your[-_ ]') {
+    if ($value -match 'change[-_ ]?(me|this)|placeholder|your[-_ ]') {
       Set-EnvValue -Name $name -Value ''
     }
   }
@@ -220,7 +220,7 @@ function Assert-ProductionConfiguration {
   $missing = @()
   foreach ($name in $cloudValues) {
     $value = Get-EnvValue -Name $name
-    if (-not $value -or $value -match 'change[-_ ]?me|placeholder|your[-_ ]') {
+    if (-not $value -or $value -match 'change[-_ ]?(me|this)|placeholder|your[-_ ]') {
       $missing += $name
     }
   }

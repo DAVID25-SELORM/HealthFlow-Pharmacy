@@ -47,6 +47,37 @@ describe('Windows production installer scripts', () => {
     expect(readScript('install-service.ps1')).toContain('RandomNumberGenerator]::Create()')
   })
 
+  it('replaces every placeholder the settings template ships, including change-this', () => {
+    // The template ships BRANCH_SERVER_TOKEN=change-this-long-random-local-token. The installer
+    // only swapped "change-me"-style placeholders, so the server refused to start (service Paused)
+    // with "Set BRANCH_SERVER_TOKEN to a long random value before starting the server.".
+    const installer = readScript('install-service.ps1').replace(/\r\n/g, '\n')
+    const pattern = installer.match(/\$branchToken -match '([^']+)'/)?.[1]
+    expect(pattern).toBeTruthy()
+    const isPlaceholder = new RegExp(pattern, 'i')
+
+    const template = fs
+      .readFileSync(path.join(serverDir, '.env.example'), 'utf8')
+      .replace(/\r\n/g, '\n')
+    const valueOf = (name) => template.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1] ?? ''
+    for (const name of ['BRANCH_SERVER_TOKEN', 'BRANCH_SYNC_TOKEN']) {
+      expect(valueOf(name), name).not.toBe('')
+      expect(isPlaceholder.test(valueOf(name)), `${name} placeholder is replaced`).toBe(true)
+    }
+
+    // The same pattern is used for the cloud values, so the three copies must agree.
+    expect(installer.match(/-match 'change\[-_ \]\?\(me\|this\)\|placeholder\|your\[-_ \]'/g)).toHaveLength(3)
+  })
+
+  it('opens the secure port with the whole certificate setting, so a PFX install has a certificate', () => {
+    // The installer provisions server.pfx. The server used to pass only cert and key, which are empty for a
+    // PFX, so every secure connection failed and the first health check could never pass.
+    const server = fs.readFileSync(path.join(serverDir, 'src', 'server.js'), 'utf8')
+
+    expect(server).toContain('https.createServer(tlsRuntime.credentials, app)')
+    expect(server).not.toContain('key: tlsRuntime.credentials.key')
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')

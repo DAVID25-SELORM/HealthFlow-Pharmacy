@@ -1715,11 +1715,10 @@ app.use((error, _request, response, _next) => {
   response.status(errorResponse.status).json(errorResponse.body)
 })
 
+// The credentials are either { pfx, passphrase } (what the installer provisions) or { cert, key } (PEM files).
+// Passing only cert and key left a PFX install with no certificate, so every secure connection failed.
 const server = tlsRuntime.ready
-  ? https.createServer({
-      cert: tlsRuntime.credentials.cert,
-      key: tlsRuntime.credentials.key,
-    }, app)
+  ? https.createServer(tlsRuntime.credentials, app)
   : app
 
 server.listen(config.port, effectiveHost, () => {
