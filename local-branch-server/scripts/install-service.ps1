@@ -70,14 +70,28 @@ function Ensure-Nssm {
     'C:\ProgramData\chocolatey\bin\nssm.exe'
   )
 
+  $installedNssm = Join-Path $nssmInstallDir 'nssm.exe'
   try {
     $resolved = Resolve-CommandPath -CommandName 'nssm.exe' -ProvidedPath $NssmPath -CandidatePaths $candidatePaths
     New-Item -ItemType Directory -Force -Path $nssmInstallDir | Out-Null
-    Copy-Item -LiteralPath $resolved -Destination (Join-Path $nssmInstallDir 'nssm.exe') -Force
-    return (Join-Path $nssmInstallDir 'nssm.exe')
+    # The running service IS the installed copy of nssm.exe, so Windows will not let it be overwritten.
+    # If the installed copy is already identical there is nothing to copy.
+    if ((Test-Path -LiteralPath $installedNssm) -and
+        ((Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $installedNssm -Algorithm SHA256).Hash)) {
+      return $installedNssm
+    }
+    try {
+      Copy-Item -LiteralPath $resolved -Destination $installedNssm -Force -ErrorAction Stop
+    } catch {
+      # Most likely the previous service still holds the file: stop it and try once more.
+      Stop-Service -Name 'HealthFlowOfflineServer' -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 3
+      Copy-Item -LiteralPath $resolved -Destination $installedNssm -Force -ErrorAction Stop
+    }
+    return $installedNssm
   } catch {
     if ($OfflineOnly) {
-      throw 'NSSM is not bundled with this installer. Rebuild the HealthFlow installer with deployment\windows\nssm\win64\nssm.exe before handover.'
+      throw "NSSM could not be prepared: $($_.Exception.Message) The installer must contain deployment\windows\nssm\win64\nssm.exe, and nothing else may be using $installedNssm."
     }
 
     Write-Warning 'Bundled NSSM was not found. Downloading NSSM 2.24...'

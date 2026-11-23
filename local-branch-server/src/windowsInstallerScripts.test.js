@@ -78,6 +78,17 @@ describe('Windows production installer scripts', () => {
     expect(server).not.toContain('key: tlsRuntime.credentials.key')
   })
 
+  it('can be run again over a working install without failing on the running service', () => {
+    // The Windows service is the installed copy of nssm.exe, so Windows will not let it be overwritten while it
+    // runs. Any failure was reported as "NSSM is not bundled", which was wrong (the file was in the zip).
+    const installer = readScript('install-service.ps1').replace(/\r\n/g, '\n')
+
+    expect(installer).toContain('Get-FileHash -LiteralPath $resolved -Algorithm SHA256')
+    expect(installer).toContain("Stop-Service -Name 'HealthFlowOfflineServer' -Force")
+    expect(installer).toContain('NSSM could not be prepared: $($_.Exception.Message)')
+    expect(installer).not.toContain('NSSM is not bundled with this installer.')
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')
@@ -114,7 +125,7 @@ describe('Windows production installer scripts', () => {
     expect(elevatedInstaller).toContain('$arguments += \'-OfflineOnly\'')
 
     expect(serviceInstaller).toContain('[switch]$OfflineOnly')
-    expect(serviceInstaller).toContain("throw 'NSSM is not bundled with this installer")
+    expect(serviceInstaller).toContain('NSSM could not be prepared')
     expect(serviceInstaller).toContain("throw 'Production dependencies are not bundled")
     expect(serviceInstaller).toContain("$excluded = @('data', 'logs', '.env')")
     expect(serviceInstaller).toContain('node_modules already exists. Skipping npm install.')
