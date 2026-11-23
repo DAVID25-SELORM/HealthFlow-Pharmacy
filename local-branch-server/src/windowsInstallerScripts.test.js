@@ -33,6 +33,20 @@ describe('Windows production installer scripts', () => {
     expect(installer).not.toContain('-LanHostname `"$LanHostname`" -LanIp')
   })
 
+  it('uses only random-number code that exists in Windows PowerShell 5.1', () => {
+    // RandomNumberGenerator.Fill is .NET Core only, so it stopped the install on a real computer with
+    // "does not contain a method named 'Fill'". Create().GetBytes works on every PowerShell.
+    const scriptsDir = path.join(serverDir, 'scripts')
+    const offenders = fs
+      .readdirSync(scriptsDir)
+      .filter((name) => name.endsWith('.ps1'))
+      .filter((name) => readScript(name).includes('RandomNumberGenerator]::Fill('))
+
+    expect(offenders).toEqual([])
+    expect(readScript('provision-facility-tls.ps1')).toContain('RandomNumberGenerator]::Create()')
+    expect(readScript('install-service.ps1')).toContain('RandomNumberGenerator]::Create()')
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')

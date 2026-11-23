@@ -43,6 +43,14 @@ function Set-EnvValue {
   Set-Content -LiteralPath $envPath -Value $content -Encoding UTF8
 }
 
+# RandomNumberGenerator.Fill does not exist in Windows PowerShell 5.1 (.NET Framework); Create().GetBytes works everywhere.
+function New-RandomBase64Token {
+  $bytes = New-Object byte[] 32
+  $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $generator.GetBytes($bytes) } finally { $generator.Dispose() }
+  return [Convert]::ToBase64String($bytes)
+}
+
 function Export-PemCertificate {
   param([System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate, [string]$Path)
   $base64 = [Convert]::ToBase64String($Certificate.RawData, [Base64FormattingOptions]::InsertLineBreaks)
@@ -104,14 +112,10 @@ if (-not $canReuse) {
       '2.5.29.37={text}1.3.6.1.5.5.7.3.1'
     )
 
-  $passwordBytes = New-Object byte[] 32
-  [System.Security.Cryptography.RandomNumberGenerator]::Fill($passwordBytes)
-  $pfxPassword = [Convert]::ToBase64String($passwordBytes)
+  $pfxPassword = New-RandomBase64Token
   $enrollmentToken = $existingMetadata.enrollmentToken
   if (-not $enrollmentToken) {
-    $enrollmentBytes = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($enrollmentBytes)
-    $enrollmentToken = [Convert]::ToBase64String($enrollmentBytes)
+    $enrollmentToken = New-RandomBase64Token
   }
   $securePassword = ConvertTo-SecureString $pfxPassword -AsPlainText -Force
   Export-PfxCertificate -Cert $serverCertificate -FilePath $pfxPath -Password $securePassword -Force | Out-Null
@@ -131,9 +135,7 @@ if (-not $canReuse) {
   $pfxPassword = $existingMetadata.pfxPassword
   $enrollmentToken = $existingMetadata.enrollmentToken
   if (-not $enrollmentToken) {
-    $enrollmentBytes = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($enrollmentBytes)
-    $enrollmentToken = [Convert]::ToBase64String($enrollmentBytes)
+    $enrollmentToken = New-RandomBase64Token
     $existingMetadata | Add-Member -NotePropertyName enrollmentToken -NotePropertyValue $enrollmentToken -Force
     $existingMetadata | ConvertTo-Json | Set-Content -LiteralPath $metadataPath -Encoding UTF8
   }

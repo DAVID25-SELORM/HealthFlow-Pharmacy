@@ -194,8 +194,10 @@ function Set-EnvValue {
 function Initialize-BootstrapConfiguration {
   $branchToken = Get-EnvValue -Name 'BRANCH_SERVER_TOKEN'
   if (-not $branchToken -or $branchToken -match 'change[-_ ]?me|placeholder|your[-_ ]') {
+    # RandomNumberGenerator.Fill does not exist in Windows PowerShell 5.1; Create().GetBytes works everywhere.
     $bytes = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $generator.GetBytes($bytes) } finally { $generator.Dispose() }
     Set-EnvValue -Name 'BRANCH_SERVER_TOKEN' -Value ([Convert]::ToBase64String($bytes))
     Write-Host 'Generated a secure local branch server token.'
   }
