@@ -21,6 +21,18 @@ describe('Windows production installer scripts', () => {
     expect(installer).toContain('New-NetFirewallRule')
   })
 
+  it('does not pass an empty -LanIp to the TLS provisioner', () => {
+    // Windows PowerShell 5.1 drops an empty string argument, which left "-LanIp" with no value and
+    // stopped the first install with "Missing an argument for parameter 'LanIp'".
+    const installer = readScript('install-service.ps1').replace(/\r\n/g, '\n')
+
+    expect(installer).toContain('$tlsArguments')
+    expect(installer).toContain("if ($LanIp) {\n  $tlsArguments += @('-LanIp', $LanIp)\n}")
+    expect(installer).not.toMatch(/-LanHostname \$LanHostname `\n\s*-LanIp \$LanIp/)
+    expect(installer).toContain("if ($LanIp) {\n  $renewalArgument += ")
+    expect(installer).not.toContain('-LanHostname `"$LanHostname`" -LanIp')
+  })
+
   it('provisions a facility CA and creates a workstation enrollment bundle', () => {
     const provisioner = readScript('provision-facility-tls.ps1')
     const workstation = readScript('install-workstation-trust.ps1')

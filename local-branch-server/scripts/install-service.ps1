@@ -336,10 +336,18 @@ if (-not (Test-Path -LiteralPath $tlsProvisioner)) {
   throw "TLS provisioner not found: $tlsProvisioner"
 }
 Write-Host 'Provisioning facility TLS certificate and workstation enrollment bundle...'
-& powershell -NoProfile -ExecutionPolicy Bypass -File $tlsProvisioner `
-  -InstallRoot $InstallRoot `
-  -LanHostname $LanHostname `
-  -LanIp $LanIp
+# Pass -LanIp only when one was given. Windows PowerShell 5.1 drops an empty string argument when it
+# starts powershell.exe, which leaves "-LanIp" with no value and stops the install.
+$tlsArguments = @(
+  '-NoProfile', '-ExecutionPolicy', 'Bypass',
+  '-File', $tlsProvisioner,
+  '-InstallRoot', $InstallRoot,
+  '-LanHostname', $LanHostname
+)
+if ($LanIp) {
+  $tlsArguments += @('-LanIp', $LanIp)
+}
+& powershell @tlsArguments
 if ($LASTEXITCODE -ne 0) {
   throw "Facility TLS provisioning failed with exit code $LASTEXITCODE."
 }
@@ -370,9 +378,13 @@ New-NetFirewallRule `
   -Profile Domain,Private | Out-Null
 
 $renewalTaskName = 'HealthFlow TLS Certificate Renewal'
+$renewalArgument = "-NoProfile -ExecutionPolicy Bypass -File `"$tlsProvisioner`" -InstallRoot `"$InstallRoot`" -LanHostname `"$LanHostname`""
+if ($LanIp) {
+  $renewalArgument += " -LanIp `"$LanIp`""
+}
 $renewalAction = New-ScheduledTaskAction `
   -Execute 'powershell.exe' `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$tlsProvisioner`" -InstallRoot `"$InstallRoot`" -LanHostname `"$LanHostname`" -LanIp `"$LanIp`""
+  -Argument $renewalArgument
 $renewalTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3am
 $renewalPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 Register-ScheduledTask `
