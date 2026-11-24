@@ -1,0 +1,147 @@
+.nmr-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  background: var(--white, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg, 0 20px 50px rgba(15, 23, 42, 0.25));
+  overflow: hidden;
+}
+
+.nmr-panel .modal-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nmr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.nmr-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.nmr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray-600, #475569);
+}
+
+.nmr-field--grow {
+  flex: 1 1 260px;
+}
+
+.nmr-note {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius, 8px);
+  background: var(--gray-50, #f8fafc);
+  color: var(--gray-600, #475569);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.nmr-note--warn {
+  background: #fff7e6;
+  color: #7a4b00;
+}
+
+.nmr-status {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--gray-600, #475569);
+}
+
+.nmr-status--error {
+  color: #a11d1d;
+  background: #fdecec;
+  border-radius: var(--radius, 8px);
+}
+
+.nmr-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.nmr-summary__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.nmr-table-wrap {
+  flex: 0 0 auto;
+  overflow: auto;
+  max-height: max(14rem, calc(100dvh - 26rem));
+  border: 1px solid var(--gray-100, #e2e8f0);
+  border-radius: var(--radius, 8px);
+}
+
+.nmr-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--gray-50, #f8fafc);
+}
+
+.nmr-table td,
+.nmr-table th {
+  white-space: nowrap;
+}
+
+.nmr-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nmr-row--left-out td {
+  opacity: 0.55;
+}
+
+.nmr-row--left-out td:first-child,
+.nmr-row--left-out td:last-child {
+  opacity: 1;
+}
+
+.nmr-attachment {
+  width: 9.5rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.nmr-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .nmr-panel {
+    width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .nmr-summary__actions {
+    margin-left: 0;
+  }
+}

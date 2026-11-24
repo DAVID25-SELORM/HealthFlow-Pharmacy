@@ -1,5 +1,6 @@
 import { cccProviderName, cccResultMessage } from '../utils/cccResultMessage'
 import NhisExportBlockerClaims from '../components/NhisExportBlockerClaims'
+import NhisMonthlyReports from '../components/NhisMonthlyReports'
 import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from '../utils/nhiaAttendanceValues'
 import { formatNhiaDisplayDate } from '../utils/nhiaDisplayDates'
 import { isLikelyGhanaPhone, normalizePhoneInput } from '../utils/ghanaPhone'
@@ -1502,6 +1503,7 @@ const Nhis = () => {
   const [showImportModal, setShowImportModal]       = useState(false)
   const [showRuleImportModal, setShowRuleImportModal] = useState(false)
   const [showExportModal, setShowExportModal]       = useState(false)
+  const [showMonthlyReports, setShowMonthlyReports] = useState(false)
   const [duplicateClaimGroups, setDuplicateClaimGroups] = useState([])
   const [duplicateExportIssues, setDuplicateExportIssues] = useState([])
   const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
@@ -6821,6 +6823,13 @@ const Nhis = () => {
                 >
                   <CheckCircle2 size={14} /> Final export check
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowMonthlyReports(true)}
+                >
+                  <FileSpreadsheet size={14} /> Monthly reports
+                </button>
               </div>
             </div>
             <div className="nhis-readiness-summary-grid">
@@ -10833,6 +10842,15 @@ const Nhis = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {showMonthlyReports && (
+        <NhisMonthlyReports
+          organizationId={organizationId}
+          facilityName={resolvedNhiaSettings?.facilityName || organization?.name || organization?.pharmacy_name || ''}
+          onClose={() => setShowMonthlyReports(false)}
+          notify={notify}
+        />
       )}
 
       {showExportModal && (
