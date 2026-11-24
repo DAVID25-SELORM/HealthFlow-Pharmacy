@@ -67,9 +67,34 @@ the test PC and confirm the status ends as `rolled_back`, the old version serves
 ## Keys
 
 The private signing key must stay off facility PCs and out of the repository. Anyone holding it can push code to every
-offline PC. If it is lost, no existing install can be updated: make a new pair with
-`node local-branch-server\scripts\generate-update-keypair.mjs <folder>`, put the new public key in `.env.example`
-(and `.env.linux.example`), and move every PC to a new installer.
+offline PC.
+
+- **Where it lives:** `C:\secure\healthflow-update-keys\` on the release PC (the folder is limited to that Windows
+  user). Keep a second copy of the *protected* file somewhere else (password manager, USB drive).
+- **Protect it with a passphrase** once, yourself, in a terminal (the passphrase is typed hidden and never saved):
+
+  ```powershell
+  node local-branch-server\scripts\protect-update-key.mjs C:\secure\healthflow-update-keys\healthflow-update-private.pem
+  ```
+
+  It writes `healthflow-update-private.encrypted.pem`, proves it opens with the passphrase and is the same key, and
+  leaves the plain file for you to delete after backing up. Use the encrypted file as `-PrivateKeyPath`; signing then asks
+  for the passphrase on screen (or reads `HEALTHFLOW_UPDATE_KEY_PASSPHRASE` for automation). Store the passphrase apart
+  from the file: losing either one loses the key.
+- **The public half** is in `local-branch-server/.env.example`, `.env.linux.example` and `src/config/branchUpdateConfig.js`
+  (a test keeps the three identical and valid). It is not secret.
+
+### Changing the key
+
+If the key is lost or exposed, no existing install can be updated until it trusts a new one:
+
+1. `node local-branch-server\scripts\generate-update-keypair.mjs <folder>`.
+2. Put the new public key in the three places above (one PR).
+3. Build a new installer. Reinstalling a PC refreshes its `HEALTHFLOW_UPDATE_PUBLIC_KEY` from the installer
+   (`Sync-UpdateTrustKey` in `install-service.ps1`); the rest of its `.env` is kept. PCs that are not reinstalled keep
+   trusting the old key.
+
+The key was replaced on 2026-11-24, before any pharmacy ran offline, so only the test PC is affected.
 
 ## What was proven (simulation, Windows PowerShell 5.1)
 

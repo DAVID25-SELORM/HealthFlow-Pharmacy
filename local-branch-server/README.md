@@ -155,6 +155,9 @@ repository and outside all facility computers. Node.js is sufficient:
 node local-branch-server\scripts\generate-update-keypair.mjs C:\secure\healthflow-update-keys
 ```
 
+Protect the private key with a passphrase afterwards (`node local-branch-server\scripts\protect-update-key.mjs <key.pem>`,
+see `docs/offline-update-feed-runbook.md`).
+
 OpenSSL may also be used:
 
 ```powershell

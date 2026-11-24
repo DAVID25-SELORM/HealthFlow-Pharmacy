@@ -223,6 +223,23 @@ function Initialize-BootstrapConfiguration {
   }
 }
 
+# The public key that updates must be signed with belongs to the product, not to one PC, and an existing .env is
+# kept on a reinstall. Refresh just that value from the settings file shipped with this installer, so a key change
+# reaches PCs that are reinstalled instead of leaving them silently rejecting every update.
+function Sync-UpdateTrustKey {
+  $shippedEnv = Join-Path $installServerDir '.env.example'
+  if (-not (Test-Path -LiteralPath $shippedEnv)) { return }
+  $line = Get-Content -LiteralPath $shippedEnv |
+    Where-Object { $_ -match '^\s*HEALTHFLOW_UPDATE_PUBLIC_KEY\s*=' } |
+    Select-Object -First 1
+  if (-not $line) { return }
+  $shipped = ($line -split '=', 2)[1].Trim()
+  if ($shipped -and (Get-EnvValue -Name 'HEALTHFLOW_UPDATE_PUBLIC_KEY') -ne $shipped) {
+    Set-EnvValue -Name 'HEALTHFLOW_UPDATE_PUBLIC_KEY' -Value $shipped
+    Write-Host 'Updated the trusted update-signing key to the one shipped with this installer.'
+  }
+}
+
 function Assert-ProductionConfiguration {
   $cloudValues = @(
     'ORGANIZATION_ID',
@@ -391,6 +408,7 @@ New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 Copy-BranchServer
 Initialize-BootstrapConfiguration
+Sync-UpdateTrustKey
 Assert-ProductionConfiguration
 Install-DependenciesIfNeeded
 

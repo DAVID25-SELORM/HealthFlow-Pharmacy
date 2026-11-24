@@ -1,13 +1,15 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { loadSigningKey } from './update-signing-key.mjs'
 
 const [manifestPath, privateKeyPath] = process.argv.slice(2)
 if (!manifestPath || !privateKeyPath) {
   throw new Error('Usage: node sign-update-manifest.mjs <manifest-path> <private-key-path>')
 }
 
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''))
-const privateKey = fs.readFileSync(privateKeyPath, 'utf8')
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^﻿/, ''))
+// A key protected by a passphrase asks for it on the screen (or reads HEALTHFLOW_UPDATE_KEY_PASSPHRASE).
+const privateKey = await loadSigningKey(privateKeyPath)
 const payload = [
   String(manifest.version || '').trim().replace(/^v/i, ''),
   String(manifest.channel || 'stable').trim().toLowerCase(),
