@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { STOCK_SEVERITY } from './reorderCentre'
 import {
+  DEFAULT_COVER_DAYS,
   FAST_MOVING_DAYS,
   LARGE_PRICE_CHANGE_PERCENT,
+  MAX_COVER_DAYS,
+  MIN_COVER_DAYS,
   MIN_HISTORY_DAYS,
+  SIZING_MODE,
   VELOCITY_STATUS,
+  chooseOrderQuantity,
+  clampCoverDays,
   computeVelocity,
   describePriceChange,
   describeVelocity,
@@ -12,6 +18,7 @@ import {
   formatUsagePerDay,
   getExpiryWarning,
   getReorderPriority,
+  getSalesBasedQuantity,
   isFastMoving,
 } from './reorderInsights'
 
@@ -154,5 +161,47 @@ describe('getReorderPriority', () => {
 
   it('has no priority when stock is fine', () => {
     expect(getReorderPriority(STOCK_SEVERITY.OK, fast)).toEqual({ level: null, reasons: [] })
+  })
+})
+
+describe('sizing an order from sales', () => {
+  const steady = computeVelocity({ units_sold: 900, history_days: 90 }, 4) // 10 a day
+
+  it('covers the chosen number of days of sales after stock and what is already on order', () => {
+    expect(getSalesBasedQuantity(steady, 4, 14, 0)).toBe(136) // 10 x 14 - 4
+    expect(getSalesBasedQuantity(steady, 4, 14, 100)).toBe(36) // minus 100 already on order
+    expect(getSalesBasedQuantity(steady, 4, 7, 0)).toBe(66)
+  })
+
+  it('never goes below zero and rounds up to a whole unit', () => {
+    expect(getSalesBasedQuantity(steady, 500, 14, 0)).toBe(0)
+    const slow = computeVelocity({ units_sold: 100, history_days: 90 }, 0) // 1.11 a day
+    expect(getSalesBasedQuantity(slow, 0, 14, 0)).toBe(16) // 15.5 rounded up
+  })
+
+  it('says nothing rather than guessing when there is too little sales history or no sales', () => {
+    expect(getSalesBasedQuantity(computeVelocity({ units_sold: 4, history_days: 5 }, 3), 3, 14, 0)).toBeNull()
+    expect(getSalesBasedQuantity(computeVelocity({ units_sold: 0, history_days: 90 }, 3), 3, 14, 0)).toBeNull()
+    expect(getSalesBasedQuantity(null, 3, 14, 0)).toBeNull()
+  })
+
+  it('keeps the cover days within sensible limits', () => {
+    expect(clampCoverDays('x')).toBe(DEFAULT_COVER_DAYS)
+    expect(clampCoverDays(0)).toBe(MIN_COVER_DAYS)
+    expect(clampCoverDays(1000)).toBe(MAX_COVER_DAYS)
+    expect(clampCoverDays('21')).toBe(21)
+  })
+
+  it('keeps the level-based quantity by default, and takes the larger one only when asked', () => {
+    expect(chooseOrderQuantity({ levelBased: 56, salesBased: 136, mode: SIZING_MODE.LEVELS }))
+      .toEqual({ quantity: 56, basis: 'levels' })
+    expect(chooseOrderQuantity({ levelBased: 56, salesBased: 136, mode: SIZING_MODE.LEVELS_AND_SALES }))
+      .toEqual({ quantity: 136, basis: 'sales' })
+    // Sales never lower an order that the levels already call for.
+    expect(chooseOrderQuantity({ levelBased: 56, salesBased: 20, mode: SIZING_MODE.LEVELS_AND_SALES }))
+      .toEqual({ quantity: 56, basis: 'levels' })
+    // No sales figure: the levels decide, whatever the mode.
+    expect(chooseOrderQuantity({ levelBased: 56, salesBased: null, mode: SIZING_MODE.LEVELS_AND_SALES }))
+      .toEqual({ quantity: 56, basis: 'levels' })
   })
 })

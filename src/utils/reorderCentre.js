@@ -72,19 +72,23 @@ export const getSuggestedReorderQuantity = (drug, alreadyOnOrder = 0) => {
 // The one line-item shape both Inventory's Reorder actions and the Reorder
 // Centre send to Purchases via location.state.reorderItems (see Purchases.jsx).
 // A single definition so the two pages can never quietly drift apart.
-export const buildReorderLineItem = (drug, alreadyOnOrder = 0, supplierOverride, extras = {}) => ({
-  ...extras,
-  drugId: drug.id,
-  drugName: drug.name,
-  brandName: drug.brand_name || '',
-  genericName: drug.generic_name || '',
-  unit: drug.unit || 'tablet',
-  unitCost: drug.cost_price || drug.price || '',
-  saleOnReturn: Boolean(drug.sale_on_return),
-  supplier: supplierOverride !== undefined ? supplierOverride : (drug.supplier || ''),
-  alreadyOnOrder,
-  suggestedQuantity: getSuggestedReorderQuantity(drug, alreadyOnOrder),
-})
+export const buildReorderLineItem = (drug, alreadyOnOrder = 0, supplierOverride, extras = {}) => {
+  // The Reorder Centre can size an order from sales instead of levels: it passes the quantity it chose.
+  const { suggestedQuantity: chosenQuantity, ...otherExtras } = extras
+  return {
+    ...otherExtras,
+    drugId: drug.id,
+    drugName: drug.name,
+    brandName: drug.brand_name || '',
+    genericName: drug.generic_name || '',
+    unit: drug.unit || 'tablet',
+    unitCost: drug.cost_price || drug.price || '',
+    saleOnReturn: Boolean(drug.sale_on_return),
+    supplier: supplierOverride !== undefined ? supplierOverride : (drug.supplier || ''),
+    alreadyOnOrder,
+    suggestedQuantity: chosenQuantity ?? getSuggestedReorderQuantity(drug, alreadyOnOrder),
+  }
+}
 
 export const getEstimatedReorderValue = (drug, suggestedQuantity) => {
   const unitCost = Number.parseFloat(drug?.cost_price) || Number.parseFloat(drug?.price) || 0

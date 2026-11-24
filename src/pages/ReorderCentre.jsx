@@ -35,9 +35,15 @@ import {
   needsReorderAttention,
 } from '../utils/reorderCentre'
 import {
+  DEFAULT_COVER_DAYS,
   DEFAULT_EXPIRY_WINDOW_DAYS,
+  MAX_COVER_DAYS,
+  MIN_COVER_DAYS,
   PRIORITY_LABELS,
+  SIZING_MODE,
   USAGE_WINDOW_DAYS,
+  chooseOrderQuantity,
+  clampCoverDays,
   computeVelocity,
   describePriceChange,
   describeVelocity,
@@ -45,6 +51,7 @@ import {
   formatUsagePerDay,
   getExpiryWarning,
   getReorderPriority,
+  getSalesBasedQuantity,
 } from '../utils/reorderInsights'
 import './ReorderCentre.css'
 
@@ -71,6 +78,32 @@ const fmtCurrency = (value) =>
 // Needs restocking AND has something to restock to (see hasRestockTarget).
 const isActionableReorder = (drug) => needsReorderAttention(drug) && hasRestockTarget(drug)
 
+// How orders are sized is a per-browser choice (nothing is stored in the database). The default keeps the
+// original behaviour: the suggestion comes from the reorder and target levels only.
+const SIZING_STORAGE_KEY = 'healthflow.reorderCentre.sizing.v1'
+const DEFAULT_SIZING = { mode: SIZING_MODE.LEVELS, coverDays: DEFAULT_COVER_DAYS }
+
+const readSizing = () => {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(SIZING_STORAGE_KEY) || 'null')
+    if (!saved) return DEFAULT_SIZING
+    return {
+      mode: saved.mode === SIZING_MODE.LEVELS_AND_SALES ? SIZING_MODE.LEVELS_AND_SALES : SIZING_MODE.LEVELS,
+      coverDays: clampCoverDays(saved.coverDays),
+    }
+  } catch {
+    return DEFAULT_SIZING
+  }
+}
+
+const saveSizing = (sizing) => {
+  try {
+    window.localStorage.setItem(SIZING_STORAGE_KEY, JSON.stringify(sizing))
+  } catch {
+    // Private windows and blocked storage: the choice simply lasts until the page is closed.
+  }
+}
+
 const daysOrInfinity = (row) => (row.velocity.daysOfStock == null ? Number.POSITIVE_INFINITY : row.velocity.daysOfStock)
 
 const ReorderCentre = () => {
@@ -95,6 +128,7 @@ const ReorderCentre = () => {
   const [supplierFilter, setSupplierFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState('urgency')
+  const [sizing, setSizing] = useState(readSizing)
   // Supplier assigned in this session for a medicine that has none on file yet,
   // keyed by drug id. Nothing is written back to the drug until an order for it
   // is actually created (Purchases still lets staff change it before saving).
@@ -175,9 +209,15 @@ const ReorderCentre = () => {
       .map((drug) => {
         const alreadyOnOrder = openOrderQuantities.get(drug.id)?.quantity || 0
         const severity = getStockSeverity(drug)
-        const suggestedQuantity = buildReorderLineItem(drug, alreadyOnOrder).suggestedQuantity
+        const levelBasedQuantity = buildReorderLineItem(drug, alreadyOnOrder).suggestedQuantity
         const insight = insights.get(drug.id) || null
         const velocity = computeVelocity(insight, drug.quantity)
+        const salesBasedQuantity = getSalesBasedQuantity(velocity, drug.quantity, sizing.coverDays, alreadyOnOrder)
+        const { quantity: suggestedQuantity, basis: quantityBasis } = chooseOrderQuantity({
+          levelBased: levelBasedQuantity,
+          salesBased: salesBasedQuantity,
+          mode: sizing.mode,
+        })
         const priceChange = describePriceChange(insight?.last_cost, insight?.previous_cost)
         // Supplier: what staff assigned here, else the one on the medicine, else the one it
         // was last bought from. Always just a suggestion — Purchases lets staff change it.
@@ -191,6 +231,9 @@ const ReorderCentre = () => {
           severity,
           alreadyOnOrder,
           suggestedQuantity,
+          levelBasedQuantity,
+          salesBasedQuantity,
+          quantityBasis,
           supplier,
           supplierSource,
           velocity,
@@ -203,7 +246,7 @@ const ReorderCentre = () => {
           reorderLevel: getReorderLevel(drug),
         }
       })
-  }, [drugs, openOrderQuantities, insights, transferOptions, assignedSuppliers, expiryWindowDays])
+  }, [drugs, openOrderQuantities, insights, transferOptions, assignedSuppliers, expiryWindowDays, sizing])
 
   // Out-of-stock medicines with no reorder level or target: counted, not listed (nothing to suggest).
   const unplannedCount = useMemo(
@@ -298,6 +341,14 @@ const ReorderCentre = () => {
     }
   }
 
+  const changeSizing = (changes) => {
+    setSizing((current) => {
+      const next = { ...current, ...changes, coverDays: clampCoverDays(changes.coverDays ?? current.coverDays) }
+      saveSizing(next)
+      return next
+    })
+  }
+
   const assignSupplier = (drugId, value) => {
     setAssignedSuppliers((current) => ({ ...current, [drugId]: value }))
   }
@@ -309,6 +360,7 @@ const ReorderCentre = () => {
     }
     const reorderItems = group.items.map((row) =>
       buildReorderLineItem(row.drug, row.alreadyOnOrder, group.supplier, {
+        suggestedQuantity: row.suggestedQuantity,
         priceNote: formatPriceChange(row.priceChange),
         priceFlagged: Boolean(row.priceChange?.flagged),
       })
@@ -349,6 +401,28 @@ const ReorderCentre = () => {
               </select>
             </label>
           )}
+          <label className="reorder-branch-select">
+            <span>Order size</span>
+            <select
+              id="reorder-sizing-mode"
+              value={sizing.mode}
+              onChange={(event) => changeSizing({ mode: event.target.value })}
+            >
+              <option value={SIZING_MODE.LEVELS}>From reorder levels</option>
+              <option value={SIZING_MODE.LEVELS_AND_SALES}>From levels and sales</option>
+            </select>
+          </label>
+          <label className="reorder-branch-select">
+            <span>Cover (days of sales)</span>
+            <input
+              id="reorder-cover-days"
+              type="number"
+              min={MIN_COVER_DAYS}
+              max={MAX_COVER_DAYS}
+              value={sizing.coverDays}
+              onChange={(event) => changeSizing({ coverDays: event.target.value })}
+            />
+          </label>
           <button className="btn btn-secondary" type="button" onClick={() => void load()} disabled={loading}>
             <RefreshCcw size={18} />
             Refresh
@@ -491,6 +565,12 @@ const ReorderCentre = () => {
                       <td data-label="Already on order">{row.alreadyOnOrder || '-'}</td>
                       <td data-label="Suggested quantity">
                         <div>{row.suggestedQuantity}</div>
+                        {row.salesBasedQuantity !== null && (
+                          <div className="reorder-drug-subtext" data-testid="reorder-quantity-basis">
+                            {`Levels ${row.levelBasedQuantity} · Sales (${sizing.coverDays} days) ${row.salesBasedQuantity}`}
+                            {row.quantityBasis === 'sales' ? ' · sized from sales' : ''}
+                          </div>
+                        )}
                         {row.transferAdvice && row.suggestedQuantity > 0 && (
                           canAdjustStock ? (
                             <button

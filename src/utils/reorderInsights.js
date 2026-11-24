@@ -48,6 +48,40 @@ export const computeVelocity = (insight, quantity) => {
   }
 }
 
+// ── Order sizing from sales ─────────────────────────────────────────────
+// The default suggestion comes from the reorder and target levels. A pharmacy can also size an order from
+// how fast a medicine really sells: enough to cover COVER days of sales, after what is in stock and on order.
+export const SIZING_MODE = {
+  LEVELS: 'levels', // the suggestion comes from reorder / target levels only (the original behaviour)
+  LEVELS_AND_SALES: 'levels_and_sales', // the larger of the level-based and the sales-based quantity
+}
+export const DEFAULT_COVER_DAYS = 14
+export const MIN_COVER_DAYS = 3
+export const MAX_COVER_DAYS = 60
+
+export const clampCoverDays = (value) => {
+  const days = Number.parseInt(value, 10)
+  if (!Number.isFinite(days)) return DEFAULT_COVER_DAYS
+  return Math.min(MAX_COVER_DAYS, Math.max(MIN_COVER_DAYS, days))
+}
+
+// Units needed to cover `coverDays` of sales, after current stock and what is already on order. Null when
+// there is not enough sales history to say (never a guess), and never negative.
+export const getSalesBasedQuantity = (velocity, quantity, coverDays = DEFAULT_COVER_DAYS, alreadyOnOrder = 0) => {
+  if (!velocity || velocity.status !== VELOCITY_STATUS.OK) return null
+  const stock = Math.max(0, Number.parseFloat(quantity) || 0)
+  const outstanding = Number.parseFloat(alreadyOnOrder) || 0
+  return Math.max(0, Math.ceil(velocity.avgDailyUsage * clampCoverDays(coverDays) - stock - outstanding))
+}
+
+// Which quantity is suggested, and why. In the default mode the level-based quantity always wins.
+export const chooseOrderQuantity = ({ levelBased, salesBased, mode }) => {
+  if (mode === SIZING_MODE.LEVELS_AND_SALES && salesBased !== null && salesBased > levelBased) {
+    return { quantity: salesBased, basis: 'sales' }
+  }
+  return { quantity: levelBased, basis: 'levels' }
+}
+
 export const isFastMoving = (velocity) =>
   velocity?.status === VELOCITY_STATUS.OK && velocity.daysOfStock <= FAST_MOVING_DAYS
 

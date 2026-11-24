@@ -132,6 +132,16 @@ describe('buildReorderLineItem', () => {
     const d = drug({ id: 'd2', name: 'Ibuprofen', supplier: '' })
     expect(buildReorderLineItem(d, 0, 'Accord Pharma').supplier).toBe('Accord Pharma')
   })
+
+  it('uses a quantity chosen by the Reorder Centre, and does not let it leak into other fields', () => {
+    const d = drug({ id: 'd3', name: 'Amoxicillin', reorder_level: 20, quantity: 4, target_stock_level: 60 })
+    const item = buildReorderLineItem(d, 0, 'Accord Pharma', { suggestedQuantity: 136, priceNote: 'x' })
+    expect(item.suggestedQuantity).toBe(136)
+    expect(item.priceNote).toBe('x')
+    // Without a chosen quantity the level-based suggestion is used, exactly as before.
+    expect(buildReorderLineItem(d, 0, 'Accord Pharma', { priceNote: 'x' }).suggestedQuantity).toBe(56)
+    expect(buildReorderLineItem(d, 0).suggestedQuantity).toBe(56)
+  })
 })
 
 describe('groupReorderItemsBySupplier', () => {

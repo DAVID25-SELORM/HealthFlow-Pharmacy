@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReorderCentre from './ReorderCentre'
 
 const mocks = vi.hoisted(() => ({
@@ -436,5 +436,79 @@ describe('ReorderCentre branches and transfer advice (phase 4)', () => {
     render(<ReorderCentre />)
     await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
     expect(screen.getAllByRole('button', { name: /Create Purchase Order/ }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('ReorderCentre order sizing from sales', () => {
+  const rowOf = (name) => screen.getByText(name).closest('tr')
+  const qtyCellOf = (name) => rowOf(name).querySelector('[data-label="Suggested quantity"]')
+  const sellingTenADay = { units_sold: 900, history_days: 90, last_cost: null, previous_cost: null, last_supplier: '' }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    mocks.useAuth.mockReturnValue({ canManagePurchases: true })
+    mocks.getAllDrugs.mockResolvedValue([outOfStock, critical, lowNoSupplier, wellStocked])
+    mocks.getOpenOrderQuantitiesByDrug.mockResolvedValue(new Map())
+    mocks.loadReorderInsights.mockResolvedValue(new Map([['d-critical', sellingTenADay]]))
+    mocks.getPharmacySettings.mockResolvedValue({ expiry_alert_days: 30 })
+    mocks.getBranches.mockResolvedValue([])
+    mocks.loadBranchTransferOptions.mockResolvedValue(new Map())
+  })
+
+  afterEach(() => window.localStorage.clear())
+
+  it('keeps the level-based suggestion by default, and shows what sales would suggest beside it', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+
+    const cell = qtyCellOf('Amoxicillin 500mg')
+    expect(cell.firstChild).toHaveTextContent('56') // 60 - 4
+    expect(cell).toHaveTextContent('Levels 56 · Sales (14 days) 136')
+    expect(cell).not.toHaveTextContent('sized from sales')
+    // No sales figure for a medicine with too little history.
+    expect(qtyCellOf('Ibuprofen 200mg')).not.toHaveTextContent('Sales (')
+  })
+
+  it('sizes the order from sales when chosen, and sends that quantity to Purchases', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Order size'), { target: { value: 'levels_and_sales' } })
+
+    const cell = qtyCellOf('Amoxicillin 500mg')
+    expect(cell.firstChild).toHaveTextContent('136')
+    expect(cell).toHaveTextContent('sized from sales')
+
+    const group = screen.getByText('Accord Pharma', { selector: 'strong' }).closest('.reorder-supplier-group')
+    fireEvent.click(group.querySelector('button'))
+    expect(mocks.navigate).toHaveBeenCalledWith('/purchases', {
+      state: { reorderItems: [expect.objectContaining({ drugId: 'd-critical', suggestedQuantity: 136 })] },
+    })
+  })
+
+  it('follows the number of days to cover, and remembers the choice in this browser', async () => {
+    const { unmount } = render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Order size'), { target: { value: 'levels_and_sales' } })
+    fireEvent.change(screen.getByLabelText('Cover (days of sales)'), { target: { value: '7' } })
+    expect(qtyCellOf('Amoxicillin 500mg').firstChild).toHaveTextContent('66') // 10 x 7 - 4
+    expect(JSON.parse(window.localStorage.getItem('healthflow.reorderCentre.sizing.v1'))).toEqual({ mode: 'levels_and_sales', coverDays: 7 })
+
+    unmount()
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(screen.getByLabelText('Order size')).toHaveValue('levels_and_sales')
+    expect(screen.getByLabelText('Cover (days of sales)')).toHaveValue(7)
+  })
+
+  it('never lowers an order the levels already call for', async () => {
+    mocks.loadReorderInsights.mockResolvedValue(new Map([['d-critical', { ...sellingTenADay, units_sold: 90 }]])) // 1 a day
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Order size'), { target: { value: 'levels_and_sales' } })
+    expect(qtyCellOf('Amoxicillin 500mg').firstChild).toHaveTextContent('56') // levels 56 beat sales 10
   })
 })
