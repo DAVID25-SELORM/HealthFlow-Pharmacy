@@ -1,0 +1,9 @@
+{
+  "version": "1.5.17",
+  "releaseNotes": "Test update for the offline server. No visible changes.",
+  "channel": "stable",
+  "sha256": "ce95f052d3a74d58909b3aa1292bf0b88c0a7bcd9990cd3df66d98ab801a1b16",
+  "publishedAt": "2026-11-24T17:58:26.6444791Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.5.17.zip",
+  "signature": "qpCwbRUxnDKCgZhBsddv0823JWy5MxLh8RUVMkNj+dleyb3x8I7ilW4Wd0YwceKeG9pRz3l3tVcYB32mY9okAQ=="
+}
