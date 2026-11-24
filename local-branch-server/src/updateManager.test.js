@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   compareVersions,
+  getDetachedWindowsLaunchCommand,
   getManifestSigningPayload,
   getUpdateInstallerCommand,
   verifyUpdateManifest,
@@ -93,5 +94,30 @@ describe('branch update security', () => {
     expect(() =>
       getUpdateInstallerCommand({ platform: 'darwin', expectedVersion: '1.1.0' })
     ).toThrow(/not supported on darwin/i)
+  })
+
+  it('starts the Windows updater through WMI so it is not part of the service process tree', () => {
+    const root = 'C:\\HealthFlow Local'
+    const installer = getUpdateInstallerCommand({
+      platform: 'win32',
+      installDir: root + '\\local-branch-server',
+      pendingPackagePath: root + '\\local-branch-server\\updates\\pending-update.zip',
+      expectedVersion: '1.1.0',
+      serviceName: 'HealthFlowOfflineServer',
+      databasePath: root + "\\data\\owner's.sqlite",
+    })
+    const launch = getDetachedWindowsLaunchCommand(installer)
+    const script = launch.args[launch.args.length - 1]
+
+    expect(launch.command).toBe('powershell.exe')
+    expect(launch.args).toContain('-NonInteractive')
+    expect(script).toContain('Invoke-CimMethod -ClassName Win32_Process -MethodName Create')
+    // Every updater argument is carried on the one command line: paths with spaces quoted, and single quotes
+    // doubled for the surrounding PowerShell string.
+    expect(script).toContain('-File')
+    expect(script).toContain('"' + root + '\\local-branch-server"')
+    expect(script).toContain("owner''s.sqlite")
+    expect(script).toContain('HealthFlowOfflineServer')
+    expect(script).toContain('exit 1')
   })
 })

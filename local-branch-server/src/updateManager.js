@@ -57,6 +57,31 @@ export const getUpdateInstallerCommand = ({
   throw new Error(`Automatic installation is not supported on ${platform}.`)
 }
 
+const quoteWindowsArgument = (value) => {
+  const text = String(value)
+  return /[\s"]/.test(text) ? `"${text.replace(/"/g, '\\"')}"` : text
+}
+
+// The updater stops this very service. Windows service wrappers end the whole process tree of the service they
+// stop, so an updater started as our child could be ended in the middle of an update. Asking Windows (WMI) to
+// start it makes it a separate process that is not part of the service.
+export const getDetachedWindowsLaunchCommand = (installer) => {
+  const commandLine = [installer.command, ...installer.args].map(quoteWindowsArgument).join(' ')
+  const escaped = commandLine.replace(/'/g, "''")
+  return {
+    command: 'powershell.exe',
+    args: [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${escaped}' }; if ($r.ReturnValue -ne 0) { exit 1 }`,
+    ],
+    windowsHide: true,
+  }
+}
+
 const normalizeVersion = (value) => String(value || '').trim().replace(/^v/i, '')
 const parseVersion = (value) => {
   const match = normalizeVersion(value).match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/)
@@ -283,10 +308,14 @@ export const installAvailableUpdate = async () => {
       expectedVersion: normalizeVersion(manifest.version),
       databasePath: config.sqlitePath,
     })
-    const child = spawn(installer.command, installer.args, {
-      detached: true,
+    // On Windows the launcher is short-lived (it only asks WMI to start the updater, which is a separate process
+    // from then on); a detached launcher does not manage to start it, so it is not detached.
+    const viaWmi = process.platform === 'win32'
+    const launch = viaWmi ? getDetachedWindowsLaunchCommand(installer) : installer
+    const child = spawn(launch.command, launch.args, {
+      detached: !viaWmi,
       stdio: 'ignore',
-      windowsHide: installer.windowsHide,
+      windowsHide: launch.windowsHide,
     })
     child.once('error', (error) => {
       writeStatus({

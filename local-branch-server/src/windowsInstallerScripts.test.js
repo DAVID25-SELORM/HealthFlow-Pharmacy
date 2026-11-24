@@ -289,6 +289,65 @@ describe('Windows production installer scripts', () => {
     expect(workstation).toContain('$item.Thumbprint -eq $KeepThumbprint')
   })
 
+  it('updates a one-button-installer PC: bundled Node.js, HTTPS health check, nothing needed kept', () => {
+    const updater = readScript('apply-update.ps1').replace(/\r\n/g, '\n')
+
+    // Dependencies come from the Node.js the service runs (its own npm), never assumed to be a system npm.
+    expect(updater).toContain('function Get-ServiceNodePath')
+    expect(updater).toContain('HKLM:\\SYSTEM\\CurrentControlSet\\Services\\$ServiceName\\Parameters')
+    expect(updater).toContain('node_modules\\npm\\bin\\npm-cli.js')
+    expect(updater).not.toContain('Get-Command npm.cmd -ErrorAction Stop')
+    // Dependencies and the Node.js folder are kept unless the update changes the dependency list.
+    expect(updater).toContain('$dependenciesChanged')
+    expect(updater).toContain("$keepNames += 'node_modules'")
+    expect(updater).toContain('Dependencies are unchanged; keeping the installed ones.')
+    expect(updater).toContain("($nodeFull.Substring($prefix.Length) -split '\\\\')[0]")
+    // The server answers HTTPS only once it has a certificate, so the health check must too.
+    expect(updater).toContain("$scheme = if ($Tls) { 'https' } else { 'http' }")
+    expect(updater).toContain('HEALTHFLOW_TLS_PFX_PATH')
+    expect(updater).toContain('rejectUnauthorized: false')
+    expect(updater).not.toContain('http://127.0.0.1:$port/health')
+  })
+
+  it('never restores from a backup that was not completed, and keeps only the newest two backups', () => {
+    const updater = readScript('apply-update.ps1').replace(/\r\n/g, '\n')
+
+    // A failure before the backup exists (wrong version, damaged archive) must leave the install alone.
+    expect(updater).toContain('$script:backupComplete = $false')
+    expect(updater).toContain('if (-not $script:backupComplete -or -not (Test-Path -LiteralPath $backupDir)) { return }')
+    expect(updater.indexOf('$script:backupComplete = $true')).toBeGreaterThan(updater.indexOf("State 'backing_up'"))
+    expect(updater.indexOf('$script:backupComplete = $true')).toBeLessThan(updater.indexOf("State 'installing_files'"))
+    // Untouched items are neither replaced, backed up, nor removed on restore; removals are retried (locked files).
+    expect(updater).toContain('Where-Object { $_.Name -notin $keepNames } |\n    ForEach-Object { Copy-Item')
+    expect(updater).toContain('function Remove-InstallItem')
+    expect(updater).toContain("-Filter 'backup-*'")
+    expect(updater).toContain('Select-Object -Skip 2')
+  })
+
+  it('starts the update outside the service process tree and keeps stale installers out of the app', () => {
+    const manager = fs.readFileSync(path.join(serverDir, 'src', 'updateManager.js'), 'utf8')
+    expect(manager).toContain('getDetachedWindowsLaunchCommand(installer)')
+    expect(manager).toContain('detached: !viaWmi')
+
+    const cleanup = fs.readFileSync(path.join(serverDir, '..', 'scripts', 'remove-offline-update-artifacts.mjs'), 'utf8')
+    expect(cleanup).toContain("['branch-updates', 'downloads']")
+  })
+
+  it('builds update releases into a beta feed first, checks them, and never replaces a published package', () => {
+    const prepare = readScript('prepare-update-release.ps1').replace(/\r\n/g, '\n')
+    const promote = readScript('promote-update-feed.ps1').replace(/\r\n/g, '\n')
+
+    expect(prepare).toContain("[ValidateSet('beta', 'stable')][string]$Feed = 'beta'")
+    expect(prepare).toContain('Keep the private signing key outside the repository.')
+    expect(prepare).toContain('Published packages are never replaced')
+    expect(prepare).toContain('verify-update-release.mjs')
+    expect(prepare).toContain("--newer-than")
+    expect(prepare).toContain("Join-Path $feedDir 'beta'")
+    expect(prepare).toContain('Nothing is live until you commit these files and merge them.')
+    expect(promote).toContain('verify-update-release.mjs')
+    expect(promote).toContain("Copy-Item -LiteralPath $betaManifestPath -Destination $stableManifestPath")
+  })
+
   it('backs up the database and verifies API health before completing an update', () => {
     const updater = readScript('apply-update.ps1')
 

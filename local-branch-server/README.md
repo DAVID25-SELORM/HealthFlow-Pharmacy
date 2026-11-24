@@ -162,20 +162,28 @@ openssl genpkey -algorithm Ed25519 -out healthflow-update-private.pem
 openssl pkey -in healthflow-update-private.pem -pubout -out healthflow-update-public.pem
 ```
 
-For each release, first refresh the offline bundle, increment
-`local-branch-server/package.json`, and build the signed package:
+For each release, raise `version` in `local-branch-server/package.json` (and the two matching lines in
+`package-lock.json`), then let the release script build, sign and **check** the update. It never publishes anything;
+it only puts files into `public/branch-updates`, which you review and merge like any other change:
 
 ```powershell
-npm.cmd run build:offline
-powershell -ExecutionPolicy Bypass -File local-branch-server\scripts\build-update-package.ps1 `
-  -PackageBaseUrl "https://updates.example.com/healthflow" `
+powershell -ExecutionPolicy Bypass -File local-branch-server\scripts\prepare-update-release.ps1 `
   -PrivateKeyPath "C:\secure\healthflow-update-private.pem" `
-  -ReleaseNotes "Facility update notes"
+  -ReleaseNotes "What changed, in plain words" `
+  -Feed beta
 ```
 
-Upload both generated files from `release\branch-updates` without changing
-their contents. `manifest.json` may be replaced for each release; versioned ZIP
-files should remain immutable.
+- `-Feed beta` (default) writes `public/branch-updates/beta/manifest.json`. Only a PC whose `.env` points
+  `HEALTHFLOW_UPDATE_MANIFEST_URL` at `https://healthflowcloud.com/branch-updates/beta/manifest.json` sees it. Try it on one
+  PC first.
+- When it has been proven, release it to everyone with `promote-update-feed.ps1` (it re-checks the beta update and copies
+  its manifest over `public/branch-updates/manifest.json`), or build straight to `-Feed stable`.
+- The checks (`verify-update-release.mjs`, also runnable on its own) refuse an update whose signature does not match the
+  public key the installers ship with, whose ZIP does not match the signed hash, whose inner version differs, that is not
+  newer than the live one, or that contains settings, data, logs, `node_modules`, the bundled Node.js, keys or an old
+  installer ZIP. Published ZIP files are immutable: a version already in the feed is never replaced.
+
+Details, the first-update caveat and the rollback test are in `docs/offline-update-feed-runbook.md`.
 
 `npm run start` starts the local API/POS server and the embedded sync worker loop. Use the standalone sync command only for diagnostics:
 
