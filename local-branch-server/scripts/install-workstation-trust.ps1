@@ -27,6 +27,27 @@ $certificate = Import-Certificate `
   -FilePath $rootCertificate `
   -CertStoreLocation 'Cert:\LocalMachine\Root'
 
+# Running the installer again, or a failed earlier run, can leave older copies of this server's facility root in the
+# trusted store. Remove them and keep only the one just imported.
+function Remove-StaleFacilityRoots {
+  param([string]$ServerUrl, [string]$KeepThumbprint)
+  if (-not $KeepThumbprint -or $ServerUrl -notmatch '^https://([a-z0-9.-]+):\d+$') { return }
+  $rootSubject = "CN=HealthFlow Facility Root - $($Matches[1])"
+  $removed = 0
+  foreach ($item in @(Get-ChildItem -Path 'Cert:\LocalMachine\Root' -ErrorAction SilentlyContinue)) {
+    if ($item.Thumbprint -eq $KeepThumbprint -or $item.Subject -ine $rootSubject) { continue }
+    try {
+      Remove-Item -LiteralPath $item.PSPath -Force -ErrorAction Stop
+      $removed++
+    } catch {
+      Write-Warning "Could not remove an old HealthFlow certificate ($($item.Thumbprint)): $($_.Exception.Message)"
+    }
+  }
+  if ($removed -gt 0) { Write-Host "Removed $removed old HealthFlow root certificate(s) left by earlier installs." }
+}
+
+Remove-StaleFacilityRoots -ServerUrl $serverUrl -KeepThumbprint $certificate.Thumbprint
+
 $deviceDirectory = Join-Path $env:ProgramData 'HealthFlow'
 $devicePath = Join-Path $deviceDirectory 'workstation.json'
 $existingDevice = $null

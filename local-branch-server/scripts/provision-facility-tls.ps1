@@ -51,6 +51,41 @@ function New-RandomBase64Token {
   return [Convert]::ToBase64String($bytes)
 }
 
+# Failed or repeated installs leave extra HealthFlow certificates behind (every failed run made a new root and a new
+# server certificate). Remove the ones this computer made for the same hostname, except the two in use now.
+function Remove-StaleFacilityCertificates {
+  param(
+    [string]$Hostname,
+    [string[]]$KeepThumbprints,
+    [string[]]$Stores = @('Cert:\LocalMachine\My', 'Cert:\LocalMachine\Root')
+  )
+  $keep = @($KeepThumbprints | Where-Object { $_ })
+  # Without both current thumbprints there is no safe way to tell what is stale, so remove nothing.
+  if ($keep.Count -lt 2) { return }
+  $rootSubject = "CN=HealthFlow Facility Root - $Hostname"
+  $serverSubject = "CN=$Hostname"
+  $removed = 0
+  foreach ($store in $Stores) {
+    foreach ($item in @(Get-ChildItem -Path $store -ErrorAction SilentlyContinue)) {
+      if ($keep -contains $item.Thumbprint) { continue }
+      $isOldRoot = $item.Subject -ieq $rootSubject
+      $isOldServer = ($item.Subject -ieq $serverSubject) -and ($item.Issuer -ieq $rootSubject)
+      if (-not ($isOldRoot -or $isOldServer)) { continue }
+      try {
+        if ($item.HasPrivateKey) {
+          Remove-Item -LiteralPath $item.PSPath -DeleteKey -Force -ErrorAction Stop
+        } else {
+          Remove-Item -LiteralPath $item.PSPath -Force -ErrorAction Stop
+        }
+        $removed++
+      } catch {
+        Write-Warning "Could not remove an old HealthFlow certificate ($($item.Thumbprint)): $($_.Exception.Message)"
+      }
+    }
+  }
+  if ($removed -gt 0) { Write-Host "Removed $removed old HealthFlow certificate(s) left by earlier installs." }
+}
+
 function Export-PemCertificate {
   param([System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate, [string]$Path)
   $base64 = [Convert]::ToBase64String($Certificate.RawData, [Base64FormattingOptions]::InsertLineBreaks)
@@ -131,7 +166,9 @@ if (-not $canReuse) {
     pfxPassword = $pfxPassword
     enrollmentToken = $enrollmentToken
   } | ConvertTo-Json | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+  $keepThumbprints = @($root.Thumbprint, $serverCertificate.Thumbprint)
 } else {
+  $keepThumbprints = @($existingMetadata.rootThumbprint, $existingMetadata.serverThumbprint)
   $pfxPassword = $existingMetadata.pfxPassword
   $enrollmentToken = $existingMetadata.enrollmentToken
   if (-not $enrollmentToken) {
@@ -140,6 +177,8 @@ if (-not $canReuse) {
     $existingMetadata | ConvertTo-Json | Set-Content -LiteralPath $metadataPath -Encoding UTF8
   }
 }
+
+Remove-StaleFacilityCertificates -Hostname $LanHostname -KeepThumbprints $keepThumbprints
 
 Set-EnvValue -Name 'HOST' -Value '0.0.0.0'
 Set-EnvValue -Name 'HEALTHFLOW_LAN_HOSTNAME' -Value $LanHostname.ToLowerInvariant()

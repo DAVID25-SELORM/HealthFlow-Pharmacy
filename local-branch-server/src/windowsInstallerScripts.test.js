@@ -270,6 +270,25 @@ describe('Windows production installer scripts', () => {
     })
   })
 
+  it('removes old HealthFlow certificates left by failed or repeated installs, and only those', () => {
+    const provisioner = readScript('provision-facility-tls.ps1').replace(/\r\n/g, '\n')
+    const workstation = readScript('install-workstation-trust.ps1').replace(/\r\n/g, '\n')
+
+    // Server: runs on every install (new and reused certificates), keeps the two in use, matches by hostname and issuer.
+    expect(provisioner).toContain('function Remove-StaleFacilityCertificates')
+    expect(provisioner).toContain('Remove-StaleFacilityCertificates -Hostname $LanHostname -KeepThumbprints $keepThumbprints')
+    expect(provisioner).toContain('$keepThumbprints = @($root.Thumbprint, $serverCertificate.Thumbprint)')
+    expect(provisioner).toContain('$keepThumbprints = @($existingMetadata.rootThumbprint, $existingMetadata.serverThumbprint)')
+    expect(provisioner).toContain('"CN=HealthFlow Facility Root - $Hostname"')
+    expect(provisioner).toContain('$item.Issuer -ieq $rootSubject')
+    expect(provisioner).toContain('if ($keep.Count -lt 2) { return }')
+
+    // Workstation: only old roots for the same server hostname, never the one just imported.
+    expect(workstation).toContain('function Remove-StaleFacilityRoots')
+    expect(workstation).toContain('Remove-StaleFacilityRoots -ServerUrl $serverUrl -KeepThumbprint $certificate.Thumbprint')
+    expect(workstation).toContain('$item.Thumbprint -eq $KeepThumbprint')
+  })
+
   it('backs up the database and verifies API health before completing an update', () => {
     const updater = readScript('apply-update.ps1')
 
