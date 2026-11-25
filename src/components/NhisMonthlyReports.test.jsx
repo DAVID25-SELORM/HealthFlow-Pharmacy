@@ -181,6 +181,18 @@ describe('monthly claim reports screen', () => {
     expect(screen.getByText(/NEWMONTH KOFI/)).toBeInTheDocument()
   })
 
+  it('offers the last 24 months in a dropdown, newest first, with the opened month kept', async () => {
+    renderScreen([claim('1', 'ALPHA')], { initialMonth: '2020-01' })
+    await screen.findByText(/ALPHA KOFI/)
+    const select = screen.getByLabelText('Month')
+    expect(select.tagName).toBe('SELECT')
+    const values = within(select).getAllByRole('option').map((option) => option.value)
+    expect(values).toHaveLength(25)
+    expect([...values].sort().reverse()).toEqual(values)
+    expect(values).toContain('2020-01')
+    expect(select).toHaveValue('2020-01')
+  })
+
   it('pages through a long month 50 claims at a time', async () => {
     const rows = Array.from({ length: 120 }, (_, index) => claim(String(index + 1), `NAME${String(index + 1).padStart(3, '0')}`))
     renderScreen(rows)

@@ -19,6 +19,23 @@ import './NhisMonthlyReports.css'
 const PAGE_SIZE = 50
 const money = (value) => Number(value || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const getStorage = () => { try { return window.localStorage } catch { return null } }
+const MONTHS_LISTED = 24
+
+// The current month and the 23 before it, newest first. The month that is already chosen is always included.
+const buildMonthOptions = (selected) => {
+  const now = new Date()
+  const options = []
+  for (let back = 0; back < MONTHS_LISTED; back += 1) {
+    const date = new Date(Date.UTC(now.getFullYear(), now.getMonth() - back, 1))
+    options.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`)
+  }
+  if (/^\d{4}-\d{2}$/.test(selected) && !options.includes(selected)) {
+    options.push(selected)
+    options.sort().reverse()
+  }
+  return options
+}
+
 const claimName = (claim) => [claim.surname, claim.other_names].filter(Boolean).join(' ') || 'Unnamed patient'
 
 export default function NhisMonthlyReports({
@@ -100,6 +117,7 @@ export default function NhisMonthlyReports({
   const currentPage = Math.min(page, pageCount - 1)
   const visible = filtered.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
   const monthLabel = formatReportMonth(month)
+  const monthOptions = useMemo(() => buildMonthOptions(month), [month])
 
   const toggleClaim = useCallback((id) => {
     const key = String(id)
@@ -139,7 +157,11 @@ export default function NhisMonthlyReports({
           <div className="nmr-controls">
             <label className="nmr-field">
               <span>Month</span>
-              <input type="month" className="form-input" value={month} onChange={(event) => setMonth(event.target.value)} />
+              <select className="form-input" value={month} onChange={(event) => setMonth(event.target.value)}>
+                {monthOptions.map((option) => (
+                  <option key={option} value={option}>{formatReportMonth(option)}</option>
+                ))}
+              </select>
             </label>
             <label className="nmr-field nmr-field--grow">
               <span>Find a claim</span>
