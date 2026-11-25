@@ -139,6 +139,21 @@ describe('medicine search screen', () => {
     expect(screen.getByText(/served, submitted and paid claims/)).toBeInTheDocument()
   })
 
+  it('shows every date each medicine was given beside the patient', async () => {
+    const patient = claim('1', 'ALPHA')
+    renderScreen({
+      searchMedicines: vi.fn(async () => [
+        line(1, 'Tamoxifen 20mg', patient, { dispensary_date: '2026-10-05' }),
+        line(2, 'Tamoxifen 20mg', claim('2', 'ALPHA', { member_no: '20001' }), { dispensary_date: '2026-09-07' }),
+      ]),
+    })
+    typeList('Tamoxifen')
+    search()
+    const row = (await screen.findByText(/ALPHA AMA/)).closest('tr')
+    expect(within(row).getByText('Tamoxifen ×4')).toBeInTheDocument()
+    expect(within(row).getByText('07/09/2026, 05/10/2026')).toBeInTheDocument()
+  })
+
   it('shows a row for every medicine searched, including one nobody was given', async () => {
     renderScreen()
     typeList('Tamoxifen, Paclitaxel')

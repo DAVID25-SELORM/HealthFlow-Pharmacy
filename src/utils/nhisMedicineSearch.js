@@ -191,8 +191,9 @@ export const buildMedicineSearchResult = ({ lines = [], groups = [] } = {}) => {
     if (takesOver) { patient.claim = claim; patient.claimSource = source }
 
     for (const group of matched) {
-      const medicine = patient.medicines.get(group.label) || { quantity: 0, claimIds: new Set() }
+      const medicine = patient.medicines.get(group.label) || { quantity: 0, claimIds: new Set(), dates: new Set() }
       medicine.quantity += quantity
+      if (date) medicine.dates.add(String(date).slice(0, 10))
       medicine.claimIds.add(claimId)
       patient.medicines.set(group.label, medicine)
 
@@ -224,7 +225,10 @@ export const buildMedicineSearchResult = ({ lines = [], groups = [] } = {}) => {
       amount: cleanMoney(patient.amount),
       medicines: [...patient.medicines.entries()]
         .sort((left, right) => (order.get(left[0]) ?? 0) - (order.get(right[0]) ?? 0))
-        .map(([label, medicine]) => ({ label, quantity: cleanMoney(medicine.quantity), claimCount: medicine.claimIds.size })),
+        .map(([label, medicine]) => ({
+          label, quantity: cleanMoney(medicine.quantity), claimCount: medicine.claimIds.size,
+          dates: [...medicine.dates].sort(),
+        })),
     }))
     .sort((left, right) => compareText(left.surname, right.surname) || compareText(left.otherNames, right.otherNames))
 
@@ -251,13 +255,31 @@ export const buildMedicineSearchResult = ({ lines = [], groups = [] } = {}) => {
 export const SOURCE_LABELS = { nhis: 'NHIS claim', cash: 'Cash sale' }
 export const describeSources = (sources = []) => sources.map((source) => SOURCE_LABELS[source]).filter(Boolean).join(' + ')
 
+export const describeMedicineName = (medicine) => `${medicine.label} ×${formatQuantity(medicine.quantity)}`
+
+// Every day the medicine was given, oldest first. A day with two records is listed once.
+export const describeMedicineDates = (medicine) => (medicine.dates || []).map(formatReportDate).filter(Boolean).join(', ')
+
+// One line per medicine: "Tamoxifen ×90: 05/09/2026, 03/10/2026, 02/11/2026".
 export const describePatientMedicines = (patient) =>
-  patient.medicines.map((medicine) => `${medicine.label} ×${formatQuantity(medicine.quantity)}`).join('; ')
+  patient.medicines
+    .map((medicine) => [describeMedicineName(medicine), describeMedicineDates(medicine)].filter(Boolean).join(': '))
+    .join('\n')
+
+// Excel does not grow a row for wrapped text in a generated file, so the height is set from the text.
+const MEDICINES_COLUMN_WIDTH = 66
+const LINE_HEIGHT = 15
+const MAX_ROW_HEIGHT = 405
+const rowHeightFor = (value) => {
+  const lines = String(value).split('\n')
+    .reduce((count, line) => count + Math.max(1, Math.ceil(line.length / (MEDICINES_COLUMN_WIDTH - 6))), 0)
+  return Math.min(MAX_ROW_HEIGHT, Math.max(1, lines) * LINE_HEIGHT)
+}
 
 // ── the workbook ───────────────────────────────────────────────────────────────────────────────────────────
 const SUMMARY_HEADERS = ['MEDICINE SEARCHED', 'PATIENTS', 'CLAIMS / SALES', 'QUANTITY GIVEN', 'AMOUNT (GHC)']
 const PATIENT_HEADERS = [
-  'No', 'SURNAME', 'OTHER NAMES', 'DOB', 'GENDER', 'MEMBER NO.', 'FOLDER NO.', 'MEDICINES GIVEN', 'GIVEN VIA',
+  'No', 'SURNAME', 'OTHER NAMES', 'DOB', 'GENDER', 'MEMBER NO.', 'FOLDER NO.', 'MEDICINES AND DATES GIVEN', 'GIVEN VIA',
   'CLAIMS / SALES', 'FIRST DATE', 'LAST DATE', 'AMOUNT (GHC)',
 ]
 const DETAIL_HEADERS = [
@@ -299,7 +321,7 @@ export const buildMedicineSearchSheets = ({
     textCell(normalizeReportGender(patient.gender), index, { align: 'center' }),
     textCell(patient.memberNo, index),
     textCell(patient.folderNo, index),
-    textCell(describePatientMedicines(patient), index, { wrap: true }),
+    textCell(describePatientMedicines(patient), index, { wrap: true, height: rowHeightFor(describePatientMedicines(patient)) }),
     textCell(describeSources(patient.sources), index, { wrap: true }),
     { ...bodyCell(patient.claimCount, index, { align: 'center' }), type: Number },
     dateCell(patient.firstDate, index),
@@ -347,7 +369,7 @@ export const buildMedicineSearchSheets = ({
     {
       sheet: 'PATIENTS',
       data: [titleRow(heading, PATIENT_HEADERS.length), PATIENT_HEADERS.map(headerCell), ...patientRows, patientTotal],
-      columns: columns([6, 18, 26, 12, 9, 16, 14, 52, 20, 10, 12, 12, 15]),
+      columns: columns([6, 18, 26, 12, 9, 16, 14, MEDICINES_COLUMN_WIDTH, 20, 10, 12, 12, 15]),
       stickyRowsCount: 2,
       orientation: 'landscape',
     },

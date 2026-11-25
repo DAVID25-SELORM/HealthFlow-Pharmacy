@@ -12,6 +12,21 @@
   align-self: flex-end;
 }
 
+.nms-meds {
+  min-width: 16rem;
+  white-space: normal;
+}
+
+.nms-meds > div + div {
+  margin-top: 0.4rem;
+}
+
+.nms-med-dates {
+  display: block;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
 .nms-summary-wrap {
   flex: 0 0 auto;
   max-height: 14rem;

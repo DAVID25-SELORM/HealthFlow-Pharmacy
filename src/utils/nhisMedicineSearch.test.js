@@ -138,7 +138,7 @@ describe('building the patient summary', () => {
     expect(addo.firstDate).toBe('2026-09-10')
     expect(addo.lastDate).toBe('2026-10-12')
     expect(addo.amount).toBe(320)
-    expect(describePatientMedicines(addo)).toBe('Xeloda (Capecitabine) ×20; Tamoxifen ×60')
+    expect(describePatientMedicines(addo)).toBe('Xeloda (Capecitabine) ×20: 10/09/2026\nTamoxifen ×60: 10/09/2026, 12/10/2026')
 
     const byLabel = Object.fromEntries(result.summary.map((entry) => [entry.label, entry]))
     expect(byLabel.Tamoxifen).toEqual({ label: 'Tamoxifen', patients: 1, claims: 2, quantity: 60, amount: 120 })
@@ -217,6 +217,51 @@ describe('building the patient summary', () => {
   })
 })
 
+describe('every date a medicine was given', () => {
+  const { groups } = parseMedicineSearch('Tamoxifen')
+  const given = (id, date, extra = {}) => line(id, 'Tamoxifen 20mg', claim(String(id), { service_date_from: date }), extra)
+
+  it('lists all dates oldest first, whatever order the records arrive in', () => {
+    const result = buildMedicineSearchResult({
+      groups, lines: [given(1, '2026-11-02'), given(2, '2026-09-05'), given(3, '2026-10-03')],
+    })
+    expect(result.patients[0].medicines[0].dates).toEqual(['2026-09-05', '2026-10-03', '2026-11-02'])
+    expect(describePatientMedicines(result.patients[0])).toBe('Tamoxifen ×6: 05/09/2026, 03/10/2026, 02/11/2026')
+  })
+
+  it('lists a day once even with two records on it, while still adding both quantities', () => {
+    const result = buildMedicineSearchResult({ groups, lines: [given(1, '2026-09-05'), given(2, '2026-09-05')] })
+    expect(describePatientMedicines(result.patients[0])).toBe('Tamoxifen ×4: 05/09/2026')
+  })
+
+  it('uses the dispensing date when the claim line has one', () => {
+    const result = buildMedicineSearchResult({
+      groups, lines: [given(1, '2026-09-05', { dispensary_date: '2026-09-09' })],
+    })
+    expect(result.patients[0].medicines[0].dates).toEqual(['2026-09-09'])
+  })
+
+  it('leaves the dates off when a record has none', () => {
+    const result = buildMedicineSearchResult({ groups, lines: [given(1, null)] })
+    expect(describePatientMedicines(result.patients[0])).toBe('Tamoxifen ×2')
+  })
+
+  it('keeps every date over two years and makes the Excel row taller to show them', () => {
+    const lines = Array.from({ length: 24 }, (_, index) => {
+      const month = String((index % 12) + 1).padStart(2, '0')
+      return given(index + 1, `${index < 12 ? 2025 : 2026}-${month}-15`)
+    })
+    const result = buildMedicineSearchResult({ groups, lines })
+    expect(result.patients[0].medicines[0].dates).toHaveLength(24)
+    const sheets = buildMedicineSearchSheets({ result, groups, facilityName: 'Sample Chemist', fromMonth: '2025-01', toMonth: '2026-12' })
+    const cell = sheets[1].data[2][7]
+    expect(cell.value.match(/\/20(25|26)/g)).toHaveLength(24)
+    expect(cell.wrap).toBe(true)
+    expect(cell.height).toBeGreaterThanOrEqual(75)
+    expect(cell.height).toBeLessThanOrEqual(405)
+  })
+})
+
 describe('the Excel workbook', () => {
   const { groups } = parseMedicineSearch('Tamoxifen, Xeloda (Capecitabine)')
   const result = buildMedicineSearchResult({
@@ -253,7 +298,7 @@ describe('the Excel workbook', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0].map((cell) => cell.value).slice(1, 3)).toEqual(['ADDO', 'AMA'])
     expect(rows[0][5].value).toBe('1000001')
-    expect(rows[0][7].value).toBe('Tamoxifen ×30')
+    expect(rows[0][7].value).toBe('Tamoxifen ×30: 10/09/2026')
     expect(sheets[1].data.at(-1)[1].value).toBe('2 patients')
   })
 

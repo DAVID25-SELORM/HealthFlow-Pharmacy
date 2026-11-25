@@ -8,7 +8,8 @@ import {
   buildMedicineSearchFileName,
   buildMedicineSearchResult,
   buildMedicineSearchSheets,
-  describePatientMedicines,
+  describeMedicineDates,
+  describeMedicineName,
   describeSources,
   formatReportDate,
   formatSearchPeriod,
@@ -251,7 +252,7 @@ export default function NhisMedicineSearch({
                   <table className="nhis-table nmr-table">
                     <thead>
                       <tr>
-                        <th>No.</th><th>Patient</th><th>Member no.</th><th>Medicines given</th><th>Given via</th>
+                        <th>No.</th><th>Patient</th><th>Member no.</th><th>Medicines and dates given</th><th>Given via</th>
                         <th className="nmr-num">Claims / sales</th><th>Last given</th><th className="nmr-num">Amount (GHS)</th>
                       </tr>
                     </thead>
@@ -261,7 +262,14 @@ export default function NhisMedicineSearch({
                           <td>{currentPage * PAGE_SIZE + index + 1}</td>
                           <td>{patientName(patient)}</td>
                           <td>{patient.memberNo || '-'}</td>
-                          <td>{describePatientMedicines(patient)}</td>
+                          <td className="nms-meds">
+                            {patient.medicines.map((medicine) => (
+                              <div key={medicine.label}>
+                                <strong>{describeMedicineName(medicine)}</strong>
+                                <span className="nms-med-dates">{describeMedicineDates(medicine)}</span>
+                              </div>
+                            ))}
+                          </td>
                           <td>{describeSources(patient.sources) || '-'}</td>
                           <td className="nmr-num">{patient.claimCount}</td>
                           <td>{formatReportDate(patient.lastDate) || '-'}</td>
