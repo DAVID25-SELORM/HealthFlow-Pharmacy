@@ -14,6 +14,7 @@ export const routeModuleLoaders = {
   '/diagnostics': () => import('../pages/Diagnostics'),
   '/offline-installer-releases': () => import('../pages/OfflineInstallerReleases'),
   '/offline-sync': () => import('../pages/OfflineSync'),
+  '/updates': () => import('../pages/Updates'),
   '/support': () => import('../pages/Support'),
   '/purchases': () => import('../pages/Purchases'),
   '/reorder': () => import('../pages/ReorderCentre'),

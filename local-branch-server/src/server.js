@@ -107,6 +107,7 @@ import { getOfflineReadiness } from './offlineReadiness.js'
 import { registerSpaFallback } from './spaFallback.js'
 import {
   checkForUpdates,
+  getUpdateNotice,
   getUpdateStatus,
   installAvailableUpdate,
   startUpdateScheduler,
@@ -1659,11 +1660,17 @@ app.post('/api/sync/reconnect', async (request, response, next) => {
   }
 })
 
-app.get('/api/updates/status', (_request, response) => {
+// Any signed-in member of staff may know that an update is waiting. Everything else about updates is for
+// administrators only. The role check is on each route because the shared path rules do not apply here.
+app.get('/api/updates/notice', (_request, response) => {
+  response.json({ data: getUpdateNotice() })
+})
+
+app.get('/api/updates/status', requireBranchAdminAccess, (_request, response) => {
   response.json({ data: getUpdateStatus() })
 })
 
-app.post('/api/updates/check', async (_request, response, _next) => {
+app.post('/api/updates/check', requireBranchAdminAccess, async (_request, response, _next) => {
   try {
     response.json({ data: await checkForUpdates() })
   } catch (error) {
@@ -1671,7 +1678,7 @@ app.post('/api/updates/check', async (_request, response, _next) => {
   }
 })
 
-app.post('/api/updates/install', async (_request, response, _next) => {
+app.post('/api/updates/install', requireBranchAdminAccess, async (_request, response, _next) => {
   try {
     response.status(202).json({ data: await installAvailableUpdate() })
   } catch (error) {

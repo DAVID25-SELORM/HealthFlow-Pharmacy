@@ -13,6 +13,24 @@ const windowsApplyScriptPath = path.join(serverDir, 'scripts', 'apply-update.ps1
 const linuxApplyScriptPath = '/usr/local/lib/healthflow/apply-update-linux.sh'
 const packageJson = JSON.parse(fs.readFileSync(path.join(serverDir, 'package.json'), 'utf8'))
 let updateTimer = null
+let firstCheckTimer = null
+let installInFlight = false
+
+const BUSY_STATES = new Set([
+  'downloading',
+  'installing',
+  'stopping_service',
+  'backing_up',
+  'installing_files',
+  'installing_dependencies',
+  'restarting',
+  'verifying',
+])
+const FINAL_STATES = new Set(['installed', 'rolled_back', 'failed'])
+// An install that has not reported anything for this long is treated as dead, so it cannot block updates for ever.
+const BUSY_LIMIT_MS = 30 * 60 * 1000
+// After a check that did not work (usually no internet), try again this soon.
+export const UPDATE_RETRY_INTERVAL_MS = 15 * 60 * 1000
 
 export const getUpdateInstallerCommand = ({
   platform,
@@ -149,11 +167,87 @@ export const verifyUpdateManifest = (manifest, publicKey = config.updates.public
   return true
 }
 
+// Windows PowerShell 5.1 (which runs the updater) starts the file it writes with a byte-order mark, and JSON.parse
+// rejects it. Without removing it the server could never read whether an update worked or was rolled back.
+export const parseStatusText = (text) => JSON.parse(String(text).replace(/^\uFEFF/, ''))
+
+const isNewerVersion = (candidate, current) => {
+  try {
+    return compareVersions(candidate, current) > 0
+  } catch {
+    return false
+  }
+}
+
+export const isUpdateInProgress = (status, now = Date.now()) => {
+  if (!BUSY_STATES.has(String(status?.state || '').toLowerCase())) return false
+  const updatedAt = Date.parse(status?.updatedAt || '')
+  return Number.isFinite(updatedAt) && now - updatedAt < BUSY_LIMIT_MS
+}
+
+export const isCheckDue = (status, now, autoCheckHours) => {
+  if (!(autoCheckHours > 0) || isUpdateInProgress(status, now)) return false
+  if (status?.lastCheckError) return true
+  const lastCheckedAt = Date.parse(status?.lastCheckedAt || '')
+  if (!Number.isFinite(lastCheckedAt)) return true
+  return now - lastCheckedAt >= autoCheckHours * 60 * 60 * 1000
+}
+
+// The result of the last install is kept apart, so a later check does not erase "the old version was restored".
+const getLastInstall = (status) =>
+  FINAL_STATES.has(String(status?.state || '').toLowerCase())
+    ? {
+        state: status.state,
+        version: status.latestVersion || '',
+        message: status.message || '',
+        at: status.updatedAt || null,
+      }
+    : status?.lastInstall || null
+
+export const describeUpdateError = (error) => {
+  const detail = `${error?.message || ''} ${error?.cause?.code || ''}`
+  if (
+    error?.name === 'AbortError' ||
+    /fetch failed|aborted|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ENETUNREACH|ETIMEDOUT/i.test(detail)
+  ) {
+    return 'Could not reach the HealthFlow update service. Check the internet connection.'
+  }
+  return error?.message || 'The update check did not work.'
+}
+
+export const buildCheckSuccess = (previous, manifest, currentVersion, now = new Date()) => {
+  const latestVersion = normalizeVersion(manifest.version)
+  const available = compareVersions(latestVersion, currentVersion) > 0
+  return {
+    state: available ? 'available' : 'current',
+    message: available ? `HealthFlow ${latestVersion} is available.` : 'This branch server is up to date.',
+    latestVersion,
+    releaseNotes: String(manifest.releaseNotes || ''),
+    publishedAt: manifest.publishedAt,
+    lastCheckedAt: now.toISOString(),
+    lastCheckError: '',
+    lastInstall: getLastInstall(previous),
+  }
+}
+
+// A failed check keeps what is already known: an update found earlier is still there when the internet drops.
+export const buildCheckFailure = (previous, error, currentVersion) => {
+  const reason = describeUpdateError(error)
+  const stillAvailable = isNewerVersion(previous?.latestVersion, currentVersion)
+  return {
+    ...previous,
+    state: stillAvailable ? 'available' : 'check_failed',
+    message: stillAvailable ? `HealthFlow ${previous.latestVersion} is available.` : reason,
+    lastCheckError: reason,
+    lastInstall: getLastInstall(previous),
+  }
+}
+
 const ensureUpdatesDir = () => fs.mkdirSync(updatesDir, { recursive: true })
 
 const readStatus = () => {
   try {
-    return JSON.parse(fs.readFileSync(statusPath, 'utf8'))
+    return parseStatusText(fs.readFileSync(statusPath, 'utf8'))
   } catch {
     return {
       state: 'idle',
@@ -208,43 +302,60 @@ const fetchManifest = async () => {
   return manifest
 }
 
-export const getUpdateStatus = () => ({
-  configured: Boolean(config.updates.manifestUrl && config.updates.publicKey),
-  currentVersion: normalizeVersion(packageJson.version),
-  platform: process.platform,
-  installerSupported: ['win32', 'linux'].includes(process.platform),
-  installerReady:
-    process.platform === 'win32'
-      ? fs.existsSync(windowsApplyScriptPath)
-      : process.platform === 'linux'
-        ? fs.existsSync(linuxApplyScriptPath)
-        : false,
-  channel: config.updates.channel,
-  autoCheckHours: config.updates.autoCheckHours,
-  autoInstall: config.updates.autoInstall,
-  ...readStatus(),
+export const getUpdateStatus = () => {
+  const currentVersion = normalizeVersion(packageJson.version)
+  const status = readStatus()
+  return {
+    configured: Boolean(config.updates.manifestUrl && config.updates.publicKey),
+    currentVersion,
+    platform: process.platform,
+    installerSupported: ['win32', 'linux'].includes(process.platform),
+    installerReady:
+      process.platform === 'win32'
+        ? fs.existsSync(windowsApplyScriptPath)
+        : process.platform === 'linux'
+          ? fs.existsSync(linuxApplyScriptPath)
+          : false,
+    channel: config.updates.channel,
+    autoCheckHours: config.updates.autoCheckHours,
+    autoInstall: config.updates.autoInstall,
+    ...status,
+    // Worked out from the versions every time, so it is still right after the screen or the server restarts.
+    available: isNewerVersion(status.latestVersion, currentVersion),
+    inProgress: isUpdateInProgress(status),
+  }
+}
+
+// What every signed-in member of staff may know: whether there is an update. No server details.
+export const getUpdateNotice = (status = getUpdateStatus()) => ({
+  currentVersion: status.currentVersion,
+  latestVersion: status.available ? status.latestVersion : '',
+  releaseNotes: status.available ? String(status.releaseNotes || '') : '',
+  available: Boolean(status.available),
+  inProgress: Boolean(status.inProgress),
 })
 
 export const getUpdateTerminalState = (status = readStatus()) =>
-  ['installed', 'rolled_back', 'failed'].includes(String(status.state || '').toLowerCase())
+  FINAL_STATES.has(String(status.state || '').toLowerCase())
 
 export const checkForUpdates = async () => {
-  const manifest = await fetchManifest()
-  const available = compareVersions(manifest.version, packageJson.version) > 0
-  const status = writeStatus({
-    state: available ? 'available' : 'current',
-    message: available
-      ? `HealthFlow ${normalizeVersion(manifest.version)} is available.`
-      : 'This branch server is up to date.',
-    latestVersion: normalizeVersion(manifest.version),
-    releaseNotes: String(manifest.releaseNotes || ''),
-    publishedAt: manifest.publishedAt,
-  })
-  return {
-    ...getUpdateStatus(),
-    ...status,
-    available,
+  // A check must not write over the progress of an install that is running.
+  if (isUpdateInProgress(readStatus())) return getUpdateStatus()
+
+  let manifest
+  try {
+    manifest = await fetchManifest()
+  } catch (error) {
+    if (!isUpdateInProgress(readStatus())) {
+      writeStatus(buildCheckFailure(readStatus(), error, packageJson.version))
+    }
+    throw new Error(describeUpdateError(error), { cause: error })
   }
+
+  if (!isUpdateInProgress(readStatus())) {
+    writeStatus(buildCheckSuccess(readStatus(), manifest, packageJson.version))
+  }
+  return getUpdateStatus()
 }
 
 const downloadPackage = async (manifest) => {
@@ -280,24 +391,46 @@ export const installAvailableUpdate = async () => {
     throw new Error('Linux update helper is not installed. Rerun install-linux-service.sh once.')
   }
 
-  const manifest = await fetchManifest()
+  if (installInFlight || isUpdateInProgress(readStatus())) {
+    throw new Error('An update is already being installed.')
+  }
+  installInFlight = true
+  try {
+    return await startInstall()
+  } finally {
+    installInFlight = false
+  }
+}
+
+const startInstall = async () => {
+  let manifest
+  try {
+    manifest = await fetchManifest()
+  } catch (error) {
+    writeStatus(buildCheckFailure(readStatus(), error, packageJson.version))
+    throw new Error(describeUpdateError(error), { cause: error })
+  }
+
+  const checked = buildCheckSuccess(readStatus(), manifest, packageJson.version)
   if (compareVersions(manifest.version, packageJson.version) <= 0) {
-    return writeStatus({
-      state: 'current',
-      message: 'This branch server is already up to date.',
-      latestVersion: normalizeVersion(manifest.version),
-    })
+    writeStatus(checked)
+    return getUpdateStatus()
   }
 
   writeStatus({
+    ...checked,
     state: 'downloading',
     message: `Downloading HealthFlow ${normalizeVersion(manifest.version)}...`,
-    latestVersion: normalizeVersion(manifest.version),
   })
 
   try {
-    await downloadPackage(manifest)
+    try {
+      await downloadPackage(manifest)
+    } catch (error) {
+      throw new Error(`${describeUpdateError(error)} Nothing was changed.`, { cause: error })
+    }
     writeStatus({
+      ...checked,
       state: 'installing',
       message: `Installing HealthFlow ${normalizeVersion(manifest.version)}. The local server will restart.`,
       latestVersion: normalizeVersion(manifest.version),
@@ -341,9 +474,9 @@ export const installAvailableUpdate = async () => {
     }
   } catch (error) {
     writeStatus({
+      ...checked,
       state: 'failed',
       message: error.message || 'Update installation failed.',
-      latestVersion: normalizeVersion(manifest.version),
     })
     throw error
   }
@@ -362,28 +495,39 @@ export const startUpdateScheduler = () => {
   const runScheduledCheck = async () => {
     try {
       const result = await checkForUpdates()
-      if (result.available && config.updates.autoInstall) {
+      // A version that already failed here is left for a person to retry, not installed again by itself.
+      const failedBefore =
+        ['rolled_back', 'failed'].includes(result.lastInstall?.state) &&
+        result.lastInstall?.version === result.latestVersion
+      if (result.available && !result.inProgress && !failedBefore && config.updates.autoInstall) {
         await installAvailableUpdate()
       }
     } catch (error) {
-      writeStatus({
-        state: 'check_failed',
-        message: error.message || 'Scheduled update check failed.',
-      })
+      // checkForUpdates and installAvailableUpdate have already saved what went wrong.
+      console.warn(`Scheduled update check did not work: ${error.message}`)
     }
   }
 
+  // The timer ticks often, but only checks when one is due: soon after a failed check (so an update is found shortly
+  // after the internet returns), otherwise every autoCheckHours.
   updateTimer = setInterval(
-    () => void runScheduledCheck(),
-    config.updates.autoCheckHours * 60 * 60 * 1000
+    () => {
+      if (isCheckDue(readStatus(), Date.now(), config.updates.autoCheckHours)) void runScheduledCheck()
+    },
+    Math.min(UPDATE_RETRY_INTERVAL_MS, config.updates.autoCheckHours * 60 * 60 * 1000)
   )
   updateTimer.unref()
-  setTimeout(() => void runScheduledCheck(), 60000).unref()
+  firstCheckTimer = setTimeout(() => void runScheduledCheck(), 60000)
+  firstCheckTimer.unref()
 }
 
 export const stopUpdateScheduler = () => {
   if (updateTimer) {
     clearInterval(updateTimer)
     updateTimer = null
+  }
+  if (firstCheckTimer) {
+    clearTimeout(firstCheckTimer)
+    firstCheckTimer = null
   }
 }

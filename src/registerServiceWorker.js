@@ -14,6 +14,7 @@ const warmOfflineRouteChunks = async () => {
     import('./pages/Signup'),
     import('./pages/ActivityLog'),
     import('./pages/OfflineSync'),
+    import('./pages/Updates'),
     import('./pages/Purchases'),
     import('./pages/Nhis'),
   ])

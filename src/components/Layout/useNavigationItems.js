@@ -22,7 +22,9 @@ import {
   Download,
   ShieldAlert,
   ArrowRightLeft,
+  ArrowUpFromLine,
 } from 'lucide-react'
+import { isServedByOfflineServer } from '../../services/branchServerApi'
 import { useAuth } from '../../context/AuthContext'
 import { useTenant } from '../../context/TenantContext'
 import {
@@ -172,6 +174,8 @@ export const useNavigationItems = () => {
     { path: '/support', icon: LifeBuoy, label: 'Support', group: 'admin', roles: ['admin', 'super_admin', 'pharmacist', 'cashier', 'assistant'] },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', group: 'admin', roles: ['super_admin'] },
     { path: '/activity-log', icon: List, label: 'Activity Log', group: 'admin', roles: ACTIVITY_LOG_ROLES, allow: canViewActivityLog },
+    // Offline version only. Everyone sees it (in an open group) so a waiting update is not hidden from anyone.
+    { path: '/updates', icon: ArrowUpFromLine, label: 'Updates', group: 'daily', roles: [], allow: true, featureAllowed: isServedByOfflineServer() },
   ]
 
   const items = menuItems.filter(

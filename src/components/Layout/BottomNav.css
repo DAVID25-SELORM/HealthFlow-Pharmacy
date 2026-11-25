@@ -234,3 +234,17 @@
     outline-offset: 2px;
   }
 }
+
+.bottom-nav-icon {
+  position: relative;
+}
+
+.bottom-nav-dot {
+  position: absolute;
+  top: 2px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f59e0b;
+}

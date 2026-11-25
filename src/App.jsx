@@ -42,6 +42,7 @@ const SystemHealth = lazy(() => loadRouteModule('/system-health'))
 const Diagnostics = lazy(() => loadRouteModule('/diagnostics'))
 const OfflineInstallerReleases = lazy(() => loadRouteModule('/offline-installer-releases'))
 const OfflineSync = lazy(() => loadRouteModule('/offline-sync'))
+const Updates = lazy(() => loadRouteModule('/updates'))
 const Support = lazy(() => loadRouteModule('/support'))
 const Purchases = lazy(() => loadRouteModule('/purchases'))
 const ReorderCentre = lazy(() => loadRouteModule('/reorder'))
@@ -282,6 +283,7 @@ function App() {
               }
             />
             <Route path="support" element={<Support />} />
+            <Route path="updates" element={<Updates />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

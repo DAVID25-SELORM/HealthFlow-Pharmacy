@@ -716,14 +716,25 @@ export default function OfflineSync() {
 
       // Step 1 — check for updates
       setWizardStep(1, 'running', 'Contacting HealthFlow update server…')
-      const updateCheck = await checkBranchServerUpdates()
-      setUpdateStatus(updateCheck)
+      // Setting up must not stop here: only an administrator may check, and the update service may be unreachable.
+      let updateCheck = null
+      let updateCheckProblem = ''
+      try {
+        updateCheck = await checkBranchServerUpdates()
+        setUpdateStatus(updateCheck)
+      } catch (updateError) {
+        updateCheckProblem = updateError.message || 'The update check did not work.'
+      }
       hasUpdate = Boolean(updateCheck?.available) &&
         updateCheck?.installerSupported !== false &&
         updateCheck?.installerReady !== false
-      setWizardStep(1, 'done', hasUpdate
-        ? `Update available: ${updateCheck.currentVersion} → ${updateCheck.latestVersion}`
-        : `Already on latest version${updateCheck?.currentVersion ? ` (${updateCheck.currentVersion})` : ''}`)
+      if (updateCheckProblem) {
+        setWizardStep(1, 'warning', updateCheckProblem)
+      } else {
+        setWizardStep(1, 'done', hasUpdate
+          ? `Update available: ${updateCheck.currentVersion} → ${updateCheck.latestVersion}`
+          : `Already on latest version${updateCheck?.currentVersion ? ` (${updateCheck.currentVersion})` : ''}`)
+      }
 
       if (hasUpdate) {
         setWizardStep(2, 'running', 'Downloading signed update package…')
@@ -756,7 +767,9 @@ export default function OfflineSync() {
           },
         })
       } else {
-        const skip = !updateCheck?.available ? 'Already on latest version' : 'Manual install required on this platform'
+        const skip = updateCheckProblem
+          ? 'Skipped because updates were not checked'
+          : !updateCheck?.available ? 'Already on latest version' : 'Manual install required on this platform'
         setWizardStep(2, 'skipped', skip)
         setWizardStep(3, 'skipped', skip)
         setWizardStep(4, 'skipped', skip)

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, X } from 'lucide-r
 import { useAuth } from '../../context/AuthContext'
 import { getRoleLabel } from '../../utils/roleLabels'
 import { preloadRouteModule } from '../../routes/routeModules'
+import { useBranchUpdateNotice } from '../../hooks/useBranchUpdateNotice'
 import { useNavigationItems } from './useNavigationItems'
 import './Sidebar.css'
 
@@ -28,6 +29,11 @@ const Sidebar = ({ isOpen, onClose, collapsed = false, onToggleCollapsed, classi
   const { groups, facilityName, facilityLogo, organization } = useNavigationItems()
   const { displayName, role } = useAuth()
   const { pathname } = useLocation()
+  const updateNotice = useBranchUpdateNotice()
+  const badgeFor = (item) =>
+    item.path === '/updates' && updateNotice?.available ? (
+      <span className="nav-item-badge">New</span>
+    ) : null
   const [storedGroups, setStoredGroups] = useState(readStoredGroups)
 
   const activeGroupId = useMemo(() => {
@@ -91,6 +97,7 @@ const Sidebar = ({ isOpen, onClose, collapsed = false, onToggleCollapsed, classi
               >
                 <item.icon size={20} />
                 <span className="nav-item-label">{item.label}</span>
+                {badgeFor(item)}
               </NavLink>
             ))}
           </div>
@@ -131,6 +138,7 @@ const Sidebar = ({ isOpen, onClose, collapsed = false, onToggleCollapsed, classi
                     >
                       <item.icon size={20} />
                       <span className="nav-item-label">{item.label}</span>
+                      {badgeFor(item)}
                     </NavLink>
                   ))}
                 </div>

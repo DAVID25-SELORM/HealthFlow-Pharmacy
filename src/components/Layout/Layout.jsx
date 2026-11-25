@@ -12,6 +12,7 @@ import Seo from '../Seo/Seo'
 import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
 import FacilityContactReporter from '../FacilityContactReporter'
 import SubscriptionNotice from '../SubscriptionNotice'
+import BranchUpdateBanner from '../BranchUpdateBanner'
 import ClaimExportAlerts from '../ClaimExportAlerts'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
@@ -64,6 +65,7 @@ const pageTitles = {
   '/reports': 'Reports',
   '/accounting': 'Accounting',
   '/settings': 'Settings',
+  '/updates': 'Updates',
 }
 
 const Layout = () => {
@@ -154,6 +156,7 @@ const Layout = () => {
           pageTitle={pageTitle}
         />
         <main className="page-content">
+          <BranchUpdateBanner />
           {location.pathname === '/billing' && <SubscriptionNotice />}
           <ClaimExportAlerts visible={location.pathname === '/export-notifications'} />
           <Outlet />

@@ -5,12 +5,17 @@ real PC with the real Windows service. Nothing is published by building an updat
 
 ## How it works
 
-1. Every installed offline server checks `HEALTHFLOW_UPDATE_MANIFEST_URL` every 24 hours (default
-   `https://healthflowcloud.com/branch-updates/manifest.json`). The manifest names one version, its ZIP, its SHA-256
+1. Every installed offline server checks `HEALTHFLOW_UPDATE_MANIFEST_URL` one minute after it starts, then every 24
+   hours (`HEALTHFLOW_UPDATE_AUTO_CHECK_HOURS`). After a check that did not work, usually because there was no internet,
+   it tries again every 15 minutes. The shipped address redirects to
+   `https://healthflowcloud.com/branch-updates/manifest.json`. The manifest names one version, its ZIP, its SHA-256
    and an Ed25519 signature. The server only trusts a manifest signed by the private key that matches the public key in
    its `.env` (`HEALTHFLOW_UPDATE_PUBLIC_KEY`, shipped in every installer).
-2. If the manifest is newer than the installed version, the **Check for updates** result says so. Installing needs an
-   administrator on that PC to press install, unless `HEALTHFLOW_UPDATE_AUTO_INSTALL=true` is set (off by default).
+2. If the manifest is newer than the installed version, everyone signed in to the offline app sees a notice and a
+   **New** mark on the **Updates** tab (an open screen notices within about 2 minutes of the server finding it). Only an
+   administrator can check or press **Update now**; other staff are asked to tell the administrator. Nothing installs by
+   itself unless `HEALTHFLOW_UPDATE_AUTO_INSTALL=true` is set (off by default). A version that failed or was rolled back
+   is not installed again automatically. A found update is remembered if the internet drops.
 3. The server downloads the ZIP, verifies the hash, and starts `scripts/apply-update.ps1` through Windows (WMI) so the
    updater is not part of the service it stops. The updater stops the service, backs up the program files and the
    database, installs the new files, keeps `.env`, the data, the bundled Node.js and (unless the dependency list changed)
@@ -30,6 +35,10 @@ The updater that runs is the copy already installed on the PC. PCs installed bef
 older) have an updater that cannot update a 1.5.x install (its health check uses plain HTTP and it needs a system npm).
 Those PCs must be moved to installer 1.5.16 or newer once; from then on updates work. No pharmacy was running offline when
 this was written, so only the test PC is affected.
+
+Servers built before the Updates tab cannot read the result the updater saves (a byte-order mark at the start of
+`updates/status.json`), and let any signed-in staff member start an update. Both are fixed in the server code, so test
+updates from an installer that includes the Updates tab.
 
 ## Releasing an update
 

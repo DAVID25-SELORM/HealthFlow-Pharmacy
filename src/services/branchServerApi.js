@@ -74,6 +74,10 @@ export const saveBranchToken = (token) => {
   return normalizedToken
 }
 
+// True only when this page came from an offline (branch) server, which says so in /branch-runtime-config.js.
+// The online website is never one, even when it has been connected to a branch server.
+export const isServedByOfflineServer = () => readHostedConfig().enabled === true
+
 export const getBranchServerConfig = () => {
   const hostedConfig = readHostedConfig()
   const runtimeConfig = readRuntimeConfig()
@@ -314,6 +318,11 @@ export const getBranchUpdateStatus = async () => {
   return response.data || response
 }
 
+export const getBranchUpdateNotice = async () => {
+  const response = await branchFetch('/api/updates/notice')
+  return response.data || response
+}
+
 export const checkBranchServerUpdates = async () => {
   const response = await branchFetch('/api/updates/check', {
     method: 'POST',
@@ -352,6 +361,15 @@ export const waitForBranchUpdateCompletion = async ({
       onStatus(status)
 
       const state = String(status?.state || '').toLowerCase()
+      // The restarted server's own update check can replace "installed" before this screen reads it.
+      if (
+        expectedVersion &&
+        !status?.inProgress &&
+        status?.lastInstall?.state === 'installed' &&
+        String(status?.currentVersion || '') === String(expectedVersion)
+      ) {
+        return status
+      }
       if (UPDATE_TERMINAL_STATES.has(state)) {
         if (state !== 'installed') {
           throw new Error(status?.message || `Branch update ended in state: ${state}.`)

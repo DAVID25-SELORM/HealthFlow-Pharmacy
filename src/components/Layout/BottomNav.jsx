@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { MoreHorizontal, X } from 'lucide-react'
 import { preloadRouteModule } from '../../routes/routeModules'
+import { useBranchUpdateNotice } from '../../hooks/useBranchUpdateNotice'
 import { groupNavigationItems, pickBottomTabs, useNavigationItems } from './useNavigationItems'
 import './BottomNav.css'
 
@@ -18,6 +19,8 @@ const BottomNav = () => {
   const { tabs, raisedIndex, moreItems } = useMemo(() => pickBottomTabs(items), [items])
   const moreGroups = useMemo(() => groupNavigationItems(moreItems), [moreItems])
   const moreIsCurrent = moreItems.some((item) => isOnPath(pathname, item.path))
+  const updateNotice = useBranchUpdateNotice()
+  const hasUpdate = (item) => item.path === '/updates' && Boolean(updateNotice?.available)
 
   useEffect(() => {
     setMoreOpen(false)
@@ -81,6 +84,7 @@ const BottomNav = () => {
                           <item.icon size={24} />
                         </span>
                         <span className="bottom-sheet-tile-label">{item.label}</span>
+                        {hasUpdate(item) && <span className="nav-item-badge">New</span>}
                       </NavLink>
                     ))}
                   </div>
@@ -118,6 +122,7 @@ const BottomNav = () => {
           >
             <span className="bottom-nav-icon">
               <MoreHorizontal size={24} />
+              {moreItems.some(hasUpdate) && <span className="bottom-nav-dot" role="img" aria-label="Update available" />}
             </span>
             <span className="bottom-nav-label">More</span>
           </button>

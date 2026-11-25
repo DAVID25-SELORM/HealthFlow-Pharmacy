@@ -19,6 +19,9 @@ export const authorizeLocalOperationalRoute = (request, response, next) => {
   const pathName = request.path
   const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
 
+  // The "an update is waiting" notice is for all signed-in staff.
+  if (request.method === 'GET' && pathName.endsWith('/updates/notice')) return next()
+
   if (pathName.startsWith('/api/database') || pathName.startsWith('/api/updates')) {
     return hasRole(request, ROLE_ACCESS.admin) ? next() : rejectRole(response)
   }
