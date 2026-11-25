@@ -108,6 +108,23 @@ export const buildNumberedReportClaims = (claims = []) => {
 
 export const countClaimsLeftOut = (claims = []) => claims.filter((claim) => !isReportClaim(claim)).length
 
+const MONTHS_LISTED = 24
+
+// The current month and the 23 before it, newest first. The month that is already chosen is always included.
+export const buildMonthOptions = (selected) => {
+  const now = new Date()
+  const options = []
+  for (let back = 0; back < MONTHS_LISTED; back += 1) {
+    const date = new Date(Date.UTC(now.getFullYear(), now.getMonth() - back, 1))
+    options.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`)
+  }
+  if (/^\d{4}-\d{2}$/.test(selected) && !options.includes(selected)) {
+    options.push(selected)
+    options.sort().reverse()
+  }
+  return options
+}
+
 // ── look ───────────────────────────────────────────────────────────────────────────────────────────────────
 const NAVY = '#1F4E78'
 const GRID = '#C9D3DF'
@@ -374,4 +391,10 @@ export const saveReportSelection = (storage, organizationId, yearMonth, selectio
   } catch {
     return false
   }
+}
+
+// The same look (header colours, banding, number formats) is reused by the medicine search workbook.
+export const reportSheetKit = {
+  text, cleanMoney, bodyCell, textCell, numberCell, dateCell, headerCell, bannerCell, totalCell, totalMoney, blanks,
+  facilityTitle, safeFilePart, MONEY,
 }

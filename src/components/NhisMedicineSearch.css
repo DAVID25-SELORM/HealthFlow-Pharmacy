@@ -1,0 +1,25 @@
+.nms-list {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.nms-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-end;
+}
+
+.nms-summary-wrap {
+  flex: 0 0 auto;
+  max-height: 14rem;
+}
+
+@media (max-width: 640px) {
+  .nms-go {
+    width: 100%;
+    justify-content: center;
+  }
+}

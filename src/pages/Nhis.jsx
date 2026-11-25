@@ -1,6 +1,7 @@
 import { cccProviderName, cccResultMessage } from '../utils/cccResultMessage'
 import NhisExportBlockerClaims from '../components/NhisExportBlockerClaims'
 import NhisMonthlyReports from '../components/NhisMonthlyReports'
+import NhisMedicineSearch from '../components/NhisMedicineSearch'
 import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from '../utils/nhiaAttendanceValues'
 import { formatNhiaDisplayDate } from '../utils/nhiaDisplayDates'
 import { isLikelyGhanaPhone, normalizePhoneInput } from '../utils/ghanaPhone'
@@ -20,7 +21,7 @@ import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
 import PatientEditor from '../components/PatientEditor'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
-  Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
+  Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse, Pill,
   Pencil, Paperclip, FileText, Trash2, Users, Clock, Stethoscope, Building2,
   AlertTriangle,
 } from 'lucide-react'
@@ -1504,6 +1505,7 @@ const Nhis = () => {
   const [showRuleImportModal, setShowRuleImportModal] = useState(false)
   const [showExportModal, setShowExportModal]       = useState(false)
   const [showMonthlyReports, setShowMonthlyReports] = useState(false)
+  const [showMedicineSearch, setShowMedicineSearch] = useState(false)
   const [duplicateClaimGroups, setDuplicateClaimGroups] = useState([])
   const [duplicateExportIssues, setDuplicateExportIssues] = useState([])
   const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
@@ -6830,6 +6832,13 @@ const Nhis = () => {
                 >
                   <FileSpreadsheet size={14} /> Monthly reports
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowMedicineSearch(true)}
+                >
+                  <Pill size={14} /> Medicine search
+                </button>
               </div>
             </div>
             <div className="nhis-readiness-summary-grid">
@@ -10849,6 +10858,15 @@ const Nhis = () => {
           organizationId={organizationId}
           facilityName={resolvedNhiaSettings?.facilityName || organization?.name || organization?.pharmacy_name || ''}
           onClose={() => setShowMonthlyReports(false)}
+          notify={notify}
+        />
+      )}
+
+      {showMedicineSearch && (
+        <NhisMedicineSearch
+          organizationId={organizationId}
+          facilityName={resolvedNhiaSettings?.facilityName || organization?.name || organization?.pharmacy_name || ''}
+          onClose={() => setShowMedicineSearch(false)}
           notify={notify}
         />
       )}

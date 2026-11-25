@@ -5,6 +5,7 @@ import { getNhisClaimsForPeriod } from '../services/nhisService'
 import {
   buildClaimSummarySheets,
   buildNumberedReportClaims,
+  buildMonthOptions,
   buildReportFileName,
   buildWorkingSheet,
   cleanAttachmentNumber,
@@ -19,22 +20,6 @@ import './NhisMonthlyReports.css'
 const PAGE_SIZE = 50
 const money = (value) => Number(value || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const getStorage = () => { try { return window.localStorage } catch { return null } }
-const MONTHS_LISTED = 24
-
-// The current month and the 23 before it, newest first. The month that is already chosen is always included.
-const buildMonthOptions = (selected) => {
-  const now = new Date()
-  const options = []
-  for (let back = 0; back < MONTHS_LISTED; back += 1) {
-    const date = new Date(Date.UTC(now.getFullYear(), now.getMonth() - back, 1))
-    options.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`)
-  }
-  if (/^\d{4}-\d{2}$/.test(selected) && !options.includes(selected)) {
-    options.push(selected)
-    options.sort().reverse()
-  }
-  return options
-}
 
 const claimName = (claim) => [claim.surname, claim.other_names].filter(Boolean).join(' ') || 'Unnamed patient'
 
