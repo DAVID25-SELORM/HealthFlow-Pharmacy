@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Download, Pill, Search, X } from 'lucide-react'
-import writeExcelFile from 'write-excel-file/browser'
+import { saveExcelFile } from '../utils/saveExcelFile'
 import { searchMedicineLines } from '../services/nhisMedicineSearchService'
 import { logAuditEvent } from '../services/auditService'
 import {
@@ -116,8 +116,11 @@ export default function NhisMedicineSearch({
         result: searched.result, groups: searched.groups, facilityName,
         fromMonth: searched.fromMonth, toMonth: searched.toMonth, source: searched.source,
       })
-      await writeExcelFile(sheets, { fontFamily: 'Calibri', fontSize: 11 })
-        .toFile(buildMedicineSearchFileName(facilityName, searched.fromMonth, searched.toMonth))
+      await saveExcelFile(
+        sheets,
+        { fontFamily: 'Calibri', fontSize: 11 },
+        buildMedicineSearchFileName(facilityName, searched.fromMonth, searched.toMonth)
+      )
       notify('Medicine search downloaded.', 'success')
       try {
         // Counts and months only: no patient or medicine details go into the audit trail.

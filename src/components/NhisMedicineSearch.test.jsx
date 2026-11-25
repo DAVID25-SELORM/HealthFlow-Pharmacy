@@ -6,9 +6,10 @@ vi.mock('write-excel-file/browser', () => ({
   default: vi.fn((sheets) => {
     const call = { sheets, fileName: null }
     writeCalls.push(call)
-    return { toFile: vi.fn(async (name) => { call.fileName = name }) }
+    return { toBlob: vi.fn(async () => call) }
   }),
 }))
+vi.mock('../utils/downloadBlob', () => ({ downloadBlob: vi.fn((call, name) => { call.fileName = name }) }))
 vi.mock('../services/nhisMedicineSearchService', () => ({ searchMedicineLines: vi.fn() }))
 vi.mock('../services/auditService', () => ({ logAuditEvent: vi.fn() }))
 
@@ -224,7 +225,7 @@ describe('medicine search screen', () => {
 
   it('reports a failed download instead of failing silently', async () => {
     const writer = (await import('write-excel-file/browser')).default
-    writer.mockImplementationOnce(() => ({ toFile: vi.fn(async () => { throw new Error('Disk is full') }) }))
+    writer.mockImplementationOnce(() => ({ toBlob: vi.fn(async () => { throw new Error('Disk is full') }) }))
     const { notify } = renderScreen()
     typeList('Tamoxifen')
     search()

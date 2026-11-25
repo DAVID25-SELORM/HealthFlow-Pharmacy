@@ -6,9 +6,10 @@ vi.mock('write-excel-file/browser', () => ({
   default: vi.fn((sheets, options) => {
     const call = { sheets, options, fileName: null }
     writeCalls.push(call)
-    return { toFile: vi.fn(async (name) => { call.fileName = name }) }
+    return { toBlob: vi.fn(async () => call) }
   }),
 }))
+vi.mock('../utils/downloadBlob', () => ({ downloadBlob: vi.fn((call, name) => { call.fileName = name }) }))
 vi.mock('../services/nhisService', () => ({ getNhisClaimsForPeriod: vi.fn() }))
 
 import NhisMonthlyReports from './NhisMonthlyReports'
@@ -160,7 +161,7 @@ describe('monthly claim reports screen', () => {
 
   it('reports a failed download instead of failing silently', async () => {
     const writer = (await import('write-excel-file/browser')).default
-    writer.mockImplementationOnce(() => ({ toFile: vi.fn(async () => { throw new Error('Disk is full') }) }))
+    writer.mockImplementationOnce(() => ({ toBlob: vi.fn(async () => { throw new Error('Disk is full') }) }))
     const { notify } = renderScreen([claim('1', 'ALPHA')])
     await screen.findByText(/ALPHA KOFI/)
     fireEvent.click(screen.getByRole('button', { name: /Download claim summary/ }))

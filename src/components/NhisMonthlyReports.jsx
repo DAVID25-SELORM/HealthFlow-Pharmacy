@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, FileSpreadsheet, X } from 'lucide-react'
-import writeExcelFile from 'write-excel-file/browser'
+import { saveExcelFile } from '../utils/saveExcelFile'
 import { getNhisClaimsForPeriod } from '../services/nhisService'
 import {
   buildClaimSummarySheets,
@@ -120,8 +120,7 @@ export default function NhisMonthlyReports({
       const built = kind === 'working'
         ? buildWorkingSheet({ claims, facilityName, yearMonth: month, excludedIds, attachmentNumbers })
         : buildClaimSummarySheets({ claims, facilityName, yearMonth: month })
-      await writeExcelFile(built.sheets, { fontFamily: 'Calibri', fontSize: 11 })
-        .toFile(buildReportFileName(kind, facilityName, month))
+      await saveExcelFile(built.sheets, { fontFamily: 'Calibri', fontSize: 11 }, buildReportFileName(kind, facilityName, month))
       notify(kind === 'working' ? 'Working sheet downloaded.' : 'Claim summary downloaded.', 'success')
     } catch (error) {
       notify(error?.message || 'The file could not be created.', 'error')

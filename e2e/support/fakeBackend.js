@@ -155,8 +155,9 @@ const TABLE_ROWS = (roleName, organization = ORGANIZATION) => ({
 
 // Installs the fake cloud on a Playwright page and signs the given role in.
 // `interfaceFlags` are the per-pharmacy interface switches, e.g. { classic_navigation: true }.
-export const installFakeBackend = async (page, roleName = 'admin', { interfaceFlags = {} } = {}) => {
-  const rows = TABLE_ROWS(roleName, { ...ORGANIZATION, interface_flags: interfaceFlags })
+// `tables` adds made-up rows for a test, e.g. { nhis_claim_medicines: [...] }.
+export const installFakeBackend = async (page, roleName = 'admin', { interfaceFlags = {}, tables = {} } = {}) => {
+  const rows = { ...TABLE_ROWS(roleName, { ...ORGANIZATION, interface_flags: interfaceFlags }), ...tables }
   const session = buildSession(roleName)
   const profile = buildProfile(roleName)
 
