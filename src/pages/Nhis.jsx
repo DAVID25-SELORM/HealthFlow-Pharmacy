@@ -18,6 +18,12 @@ import { getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCcc
 import { getNhisCccSaveIssue } from '../utils/nhisCccSaveRule'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
+import NhisCorrectionReason from '../components/NhisCorrectionReason'
+import {
+  NHIS_REDUCTION_REASON_PROMPT,
+  getNhisServedReductions,
+  isServedReductionReasonError,
+} from '../utils/nhisServedReductions'
 import PatientEditor from '../components/PatientEditor'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
@@ -1587,6 +1593,9 @@ const Nhis = () => {
   const [claimActionReview, setClaimActionReview] = useState(null)
   const [editingClaim, setEditingClaim]       = useState(null)
   const [correctionReason, setCorrectionReason] = useState('')
+  // '' until a save needs a reason: 'asked' by this form, or 'server' when the database asked.
+  const [reasonPrompt, setReasonPrompt] = useState('')
+  const correctionReasonRef = useRef(null)
   const [correctionHistory, setCorrectionHistory] = useState([])
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
   const prescriptionUploadSession = useRef(createPrescriptionUploadSession())
@@ -3527,6 +3536,7 @@ const Nhis = () => {
 
     setEditingClaim(claim)
     setCorrectionReason('')
+    setReasonPrompt('')
     if (canEditNhisClaimAnytime && !shouldUseBranchServer()) {
       getNhisClaimCorrectionHistory(claim.id)
         .then(setCorrectionHistory)
@@ -4649,6 +4659,17 @@ const Nhis = () => {
     }
   }
 
+  const askForCorrectionReason = (source) => {
+    setReasonPrompt(source)
+    setClaimError(NHIS_REDUCTION_REASON_PROMPT)
+    correctionReasonRef.current?.show()
+  }
+
+  const handleCorrectionReasonChange = (value) => {
+    setCorrectionReason(value)
+    if (value.trim()) setClaimError((current) => (current === NHIS_REDUCTION_REASON_PROMPT ? '' : current))
+  }
+
   const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false, medicinesOverride = null) => {
     e.preventDefault()
     if (claimSubmittingRef.current) return
@@ -4715,6 +4736,15 @@ const Nhis = () => {
     if (claimForm.dateOfBirth && !normalizedDateOfBirth) {
       setClaimError('Date of birth must be day/month/year, for example 18/06/2026.')
       return
+    }
+
+    // Lowering a served quantity needs a reason: ask before anything is uploaded or saved.
+    if (editingClaim && canEditNhisClaimAnytime && !isMedicineCounterAssistant && !correctionReason.trim()) {
+      const savedLines = editingClaim.nhis_claim_medicines || editingClaim.medicines || []
+      if (getNhisServedReductions(savedLines, effectiveClaimMedicines).length) {
+        askForCorrectionReason('asked')
+        return
+      }
     }
 
     if (!editingClaim && returnAlertSettings.enabled) {
@@ -5129,11 +5159,15 @@ const Nhis = () => {
         })
       }
     } catch (err) {
-      setClaimError(getNhisRequestErrorMessage(
-        err,
-        'Unable to save claim.',
-        editingClaim && directNhiaApiAvailable ? 'Corrections were not submitted.' : 'The claim was not saved.'
-      ))
+      if (isServedReductionReasonError(err?.message)) {
+        askForCorrectionReason('server')
+      } else {
+        setClaimError(getNhisRequestErrorMessage(
+          err,
+          'Unable to save claim.',
+          editingClaim && directNhiaApiAvailable ? 'Corrections were not submitted.' : 'The claim was not saved.'
+        ))
+      }
     } finally {
       claimSubmittingRef.current = false
       setClaimSubmitting(false)
@@ -5156,6 +5190,7 @@ const Nhis = () => {
     setTariffSearch('')
     setEditingClaim(null)
     setCorrectionReason('')
+    setReasonPrompt('')
     setCorrectionHistory([])
     prescriptionUploadSession.current.clear()
     setPrescriptionPdfFile(null)
@@ -8894,15 +8929,15 @@ const Nhis = () => {
             </div>
 
             {editingClaim && canEditNhisClaimAnytime && (
-              <section className="nhis-section nhis-correction-audit">
-                <h3 className="nhis-section-title">Reason for correction (optional)</h3>
-                <textarea
-                  className="form-input"
-                  rows={3}
-                  value={correctionReason}
-                  onChange={(event) => setCorrectionReason(event.target.value)}
-                  placeholder="Example: Wrong prescriber entered during initial claim capture."
-                />
+              <NhisCorrectionReason
+                ref={correctionReasonRef}
+                value={correctionReason}
+                onChange={handleCorrectionReasonChange}
+                reductions={getNhisServedReductions(editingClaim.nhis_claim_medicines || editingClaim.medicines || [], claimMedicines)}
+                requiredBySave={reasonPrompt === 'server'}
+                showMissing={Boolean(reasonPrompt)}
+                isAdmin={role === 'admin'}
+              >
                 {correctionHistory.length > 0 && (
                   <details>
                     <summary>Claim Correction History ({correctionHistory.length})</summary>
@@ -8917,7 +8952,7 @@ const Nhis = () => {
                     </div>
                   </details>
                 )}
-              </section>
+              </NhisCorrectionReason>
             )}
 
             <div className="modal-footer">

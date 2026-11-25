@@ -1,0 +1,40 @@
+.nhis-correction-audit {
+  padding: 0.75rem;
+}
+
+.nhis-correction-audit .form-input {
+  width: 100%;
+}
+
+.nhis-correction-audit.nhis-correction-audit--missing {
+  border: 2px solid #dc2626;
+  background: #fef2f2;
+}
+
+.nhis-reduction p {
+  margin: 0 0 0.4rem;
+}
+
+.nhis-reduction__list {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  overflow-wrap: anywhere;
+}
+
+.nhis-reduction__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.6rem;
+}
+
+.nhis-reduction__choices .btn.btn-secondary {
+  border-color: #6b7280;
+  color: #111827;
+}
+
+.nhis-reduction__missing {
+  margin: 0 0 0.4rem;
+  color: #b91c1c;
+  font-weight: 600;
+}

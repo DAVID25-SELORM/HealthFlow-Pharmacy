@@ -34,8 +34,26 @@ describe('NHIS claims pagination layout', () => {
 
   it('keeps the privileged correction reason optional', () => {
     const source = readSource('./Nhis.jsx')
-    expect(source).toContain('Reason for correction (optional)')
+    expect(readSource('../components/NhisCorrectionReason.jsx')).toContain('Reason for correction (optional)')
     expect(source).not.toContain('Enter a reason for correction before saving this previously saved claim.')
+  })
+
+  it('asks for a reason before saving a lowered served quantity, and when the database asks', () => {
+    const source = readSource('./Nhis.jsx')
+    const save = source.slice(
+      source.indexOf('const handleSubmitClaim = async'),
+      source.indexOf('const resetClaimModal')
+    )
+    const ask = save.indexOf("askForCorrectionReason('asked')")
+
+    expect(ask).toBeGreaterThan(-1)
+    // Asked before the review step and before any upload.
+    expect(ask).toBeLessThan(save.indexOf('setClaimActionReview({ intent, duplicateWarnings })'))
+    expect(ask).toBeLessThan(save.indexOf('uploadNhisPrescriptionPdf'))
+    expect(save).toContain('getNhisServedReductions(savedLines, effectiveClaimMedicines).length')
+    expect(save).toContain('isServedReductionReasonError(err?.message)')
+    expect(save).toContain("askForCorrectionReason('server')")
+    expect(source).toContain('ref={correctionReasonRef}')
   })
 
   it('recalculates claim serving status after a privileged medicine correction', () => {
