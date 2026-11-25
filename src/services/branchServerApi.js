@@ -4,40 +4,22 @@ import { isNetworkRequestError } from '../utils/requestErrors'
 import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 import { supabase } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
+import {
+  getHostedBranchConfig,
+  getWorkstationHeaders,
+  isRegisteredForServer,
+} from './branchBrowserAccess'
+
+export { isServedByOfflineServer } from './branchBrowserAccess'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
-const WORKSTATION_ID_KEY = 'healthflow.workstation.id'
-const WORKSTATION_SECRET_KEY = 'healthflow.workstation.secret'
 export const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
 export const BRANCH_USER_SESSION_STORAGE_KEY = 'healthflow_branch_user_session'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
 const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
 const WRITE_BRANCH_REQUEST_TIMEOUT_MS = 8000
 const LONG_BRANCH_REQUEST_TIMEOUT_MS = 60000
-
-const captureWorkstationEnrollment = () => {
-  if (typeof window === 'undefined') return
-  const url = new URL(window.location.href)
-  const id = url.searchParams.get('workstationId') || ''
-  const secret = url.searchParams.get('workstationSecret') || ''
-  if (!id || !secret) return
-  window.localStorage.setItem(WORKSTATION_ID_KEY, id)
-  window.localStorage.setItem(WORKSTATION_SECRET_KEY, secret)
-  url.searchParams.delete('workstationId')
-  url.searchParams.delete('workstationSecret')
-  window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`)
-}
-
-captureWorkstationEnrollment()
-
-const readHostedConfig = () => {
-  if (typeof window === 'undefined') {
-    return {}
-  }
-
-  return window.__HEALTHFLOW_BRANCH_SERVER__ || {}
-}
 
 const readRuntimeConfig = () => {
   if (typeof window === 'undefined') {
@@ -74,12 +56,8 @@ export const saveBranchToken = (token) => {
   return normalizedToken
 }
 
-// True only when this page came from an offline (branch) server, which says so in /branch-runtime-config.js.
-// The online website is never one, even when it has been connected to a branch server.
-export const isServedByOfflineServer = () => readHostedConfig().enabled === true
-
 export const getBranchServerConfig = () => {
-  const hostedConfig = readHostedConfig()
+  const hostedConfig = getHostedBranchConfig()
   const runtimeConfig = readRuntimeConfig()
   const browserToken = getSavedBranchToken()
   const token = String(browserToken || runtimeConfig.token || hostedConfig.token || '')
@@ -92,20 +70,25 @@ export const getBranchServerConfig = () => {
     String(import.meta.env.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true' &&
     Boolean(token)
 
+  const url = String(
+    runtimeConfig.url ||
+      hostedConfig.url ||
+      hostedUrl ||
+      import.meta.env.VITE_BRANCH_SERVER_URL ||
+      DEFAULT_BRANCH_SERVER_URL
+  ).replace(/\/+$/, '')
+  const registeredComputer = isRegisteredForServer(url)
+
   return {
     enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig,
-    url: String(
-      runtimeConfig.url ||
-        hostedConfig.url ||
-        hostedUrl ||
-        import.meta.env.VITE_BRANCH_SERVER_URL ||
-        DEFAULT_BRANCH_SERVER_URL
-    ).replace(/\/+$/, ''),
+    url,
     token,
+    registeredComputer,
+    // This browser has something the server will accept: a key typed in here, or this computer's registration.
+    authorized: Boolean(token) || registeredComputer,
     organizationId: String(runtimeConfig.organizationId || hostedConfig.organizationId || ''),
     branchId: String(runtimeConfig.branchId || hostedConfig.branchId || ''),
     runtimeConfigured: Boolean(runtimeConfig.url && token),
-    cookieAuthenticated: hostedConfig.enabled === true && !token,
   }
 }
 
@@ -141,33 +124,31 @@ const getBranchApiHeaders = (headers = {}) => ({
   'Content-Type': 'application/json',
   ...headers,
   'x-branch-token': getBranchRequestToken(),
-  ...(typeof window !== 'undefined' && window.localStorage.getItem(WORKSTATION_ID_KEY)
-    ? {
-        'x-healthflow-workstation-id': window.localStorage.getItem(WORKSTATION_ID_KEY),
-        'x-healthflow-workstation-secret': window.localStorage.getItem(WORKSTATION_SECRET_KEY) || '',
-      }
-    : {}),
+  ...getWorkstationHeaders(),
 })
 
-const readBranchUserSession = () => {
+const readUnexpiredBranchSession = () => {
   if (typeof window === 'undefined') return null
   try {
     const value = JSON.parse(window.localStorage.getItem(BRANCH_USER_SESSION_STORAGE_KEY) || 'null')
-    if (
-      !value?.token ||
-      value.role !== getStoredActiveRole() ||
-      Number(value.expiresAt || 0) <= Math.floor(Date.now() / 1000) + 30
-    ) {
-      return null
-    }
+    if (!value?.token || Number(value.expiresAt || 0) <= Math.floor(Date.now() / 1000) + 30) return null
     return value
   } catch {
     return null
   }
 }
 
+// The session to send with a request: only while it is for the role now in use.
+const readBranchUserSession = () => {
+  const session = readUnexpiredBranchSession()
+  return session && session.role === getStoredActiveRole() ? session : null
+}
+
+// Used to sign back in after a refresh. The role is not compared here: while the page is still starting it has saved
+// a default role over the real one, which signed every offline member of staff out on each refresh. The caller makes
+// the session's own role the one in use, and the server checks the signed session on every request.
 export const getSavedOfflineStaffSession = () => {
-  const session = readBranchUserSession()
+  const session = readUnexpiredBranchSession()
   return session?.offline ? session : null
 }
 
@@ -241,12 +222,10 @@ export const normalizeNhiaMemberLookupPayload = (payload = {}) => {
   }
 }
 
-export const isBranchServerEnabled = () =>
-  Boolean(
-    getBranchServerConfig().enabled &&
-    getBranchServerUrl() &&
-    (getBranchServerToken() || getBranchServerConfig().cookieAuthenticated)
-  )
+export const isBranchServerEnabled = () => {
+  const { enabled, url, authorized } = getBranchServerConfig()
+  return Boolean(enabled && url && authorized)
+}
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController()
@@ -303,6 +282,7 @@ export const getBranchServerHealth = async (timeoutMs = DEFAULT_BRANCH_REQUEST_T
     headers: {
       Accept: 'application/json',
       'x-branch-token': getBranchRequestToken(),
+      ...getWorkstationHeaders(),
     },
   }, timeoutMs).then(async (response) => {
     const body = await response.json().catch(() => ({}))

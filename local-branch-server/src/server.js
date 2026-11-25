@@ -11,10 +11,9 @@ import { normalizePharmacyClaimLines } from './claimPricing.js'
 import { createClaimBridgeRouter } from './claimBridge.js'
 import { applyNhisCatalogPricing } from './nhisCatalogPricing.js'
 import {
-  getBranchAuthCookie,
   issueBranchUserSession,
   issueOfflineBranchUserSession,
-  requireBranchToken,
+  requireBranchAccess,
   requireBranchUserSession,
 } from './httpAuth.js'
 import {
@@ -231,6 +230,24 @@ setInterval(() => {
   }
   rateLimitOfflineLogin.prune()
 }, Math.max(config.rateLimit.windowMs, 60000)).unref()
+// Tells the web app that this page came from an offline server. It must come before the static files below: the
+// bundle holds an empty placeholder with the same name, which was served instead of this, so the app never knew.
+// It carries no key. A computer proves itself with its own registration.
+app.get('/branch-runtime-config.js', (_request, response) => {
+  response
+    .type('application/javascript')
+    .set('Cache-Control', 'no-store')
+    .send(
+      `window.__HEALTHFLOW_BRANCH_SERVER__ = ${JSON.stringify({
+        enabled: true,
+        url: '',
+        token: '',
+        organizationId: config.organizationId,
+        branchId: config.branchId,
+      })};`
+    )
+})
+
 // ✅ STATIC FRONTEND PATCH START
 if (fs.existsSync(frontendIndex)) {
   app.use(express.static(frontendDir, {
@@ -328,7 +345,7 @@ app.use(express.json({
   },
 }))
 
-app.get('/health', requireBranchToken, (_request, response) => {
+app.get('/health', requireBranchAccess, (_request, response) => {
   const database = getDatabaseStatus()
   const nhia = getNhiaConfigurationHealth()
   response.json({
@@ -343,25 +360,6 @@ app.get('/health', requireBranchToken, (_request, response) => {
     tls: getPublicTlsStatus(tlsRuntime),
     nhia,
   })
-})
-
-app.get('/branch-runtime-config.js', (request, response) => {
-  const sameOriginRequest = String(request.get('Sec-Fetch-Site') || '').toLowerCase() === 'same-origin'
-  if (sameOriginRequest) {
-    response.setHeader('Set-Cookie', getBranchAuthCookie())
-  }
-  response
-    .type('application/javascript')
-    .set('Cache-Control', 'no-store')
-    .send(
-      `window.__HEALTHFLOW_BRANCH_SERVER__ = ${JSON.stringify({
-        enabled: true,
-        url: '',
-        token: '',
-        organizationId: config.organizationId,
-        branchId: config.branchId,
-      })};`
-    )
 })
 
 if (config.claimBridge.enabled) {
@@ -409,7 +407,7 @@ app.post('/api/workstations/enroll', (request, response, next) => {
   }
 })
 
-app.use('/api', requireBranchToken)
+app.use('/api', requireBranchAccess)
 app.use('/api', requireAuthorizedWorkstation)
 
 const requireBranchClaimsAccess = (request, response, next) => {

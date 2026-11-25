@@ -199,13 +199,14 @@ if ($isFreshInstall) {
     Write-Host 'Waiting for the local server to become reachable before opening it...'
     $reachable = Wait-HealthFlowServerReachable -Url "$serverUrl/health" -TimeoutSeconds 30 -IntervalSeconds 2
     if ($reachable) {
-      # Reuses the same bare server URL already used for the desktop shortcut
-      # and the status line above — no token, no query string, nothing added
-      # to the launch target that isn't already public. branch-runtime-
-      # config.js supplies the branch identity automatically once the
-      # browser loads this origin.
+      # Opens the desktop shortcut, which registers the browser it opens in. No key,
+      # token or query string is written into the launch command here: the shortcut
+      # file holds this computer's registration. Without the shortcut the plain
+      # address is opened, and the app says how to connect.
+      $posShortcut = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'HealthFlow Offline POS.url'
+      $launchTarget = if (Test-Path -LiteralPath $posShortcut) { $posShortcut } else { $serverUrl }
       try {
-        Start-Process $serverUrl | Out-Null
+        Start-Process $launchTarget | Out-Null
         Write-Host 'Opened HealthFlow Offline in your default browser for first-time setup.'
       } catch {
         Write-Warning "Could not open the browser automatically. Open $serverUrl manually, or double-click the 'HealthFlow Offline POS' desktop shortcut, to continue setup."

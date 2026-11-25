@@ -94,22 +94,29 @@ export const enrollWorkstation = ({ enrollmentToken, computerName, ipAddress }) 
   return { id, secret, computerName: normalizedName, enrolledAt: timestamp }
 }
 
+// The registered, still active computer this request proves it comes from, or null.
+export const findActiveWorkstation = (request) => {
+  const id = String(request.get('x-healthflow-workstation-id') || '').trim()
+  const secret = String(request.get('x-healthflow-workstation-secret') || '').trim()
+  const workstation = id && secret ? selectWorkstation.get(id) : null
+  return workstation &&
+    workstation.status === 'active' &&
+    safeDigestEquals(secret, workstation.secret_hash)
+    ? workstation
+    : null
+}
+
 export const requireAuthorizedWorkstation = (request, response, next) => {
   if (countAll.get() === 0) {
     next()
     return
   }
-  const id = String(request.get('x-healthflow-workstation-id') || '').trim()
-  const secret = String(request.get('x-healthflow-workstation-secret') || '').trim()
-  const workstation = id ? selectWorkstation.get(id) : null
-  if (
-    !workstation ||
-    workstation.status !== 'active' ||
-    !safeDigestEquals(secret, workstation.secret_hash)
-  ) {
+  const workstation = findActiveWorkstation(request)
+  if (!workstation) {
     response.status(401).json({ error: 'This workstation is not enrolled or has been revoked.' })
     return
   }
+  const id = workstation.id
   request.workstation = workstation
   touchWorkstation.run(
     nowIso(),

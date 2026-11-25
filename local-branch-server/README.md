@@ -98,6 +98,17 @@ and can be used only once. Run `install-workstation-trust.ps1` as administrator
 on that computer. Revoking the workstation in Settings immediately prevents
 its stored device credential from calling local APIs.
 
+### How a browser connects
+
+- The server tells the app it is an offline server through `/branch-runtime-config.js`. That answer carries no key,
+  and the server never hands `BRANCH_SERVER_TOKEN` to a browser.
+- A computer is connected by opening HealthFlow from its **HealthFlow Offline POS** desktop shortcut (or the one the
+  **Connect This Computer** bundle makes). The shortcut registers that browser with the computer's own id and secret.
+  A browser opened on the plain address shows how to connect.
+- Staff sessions are signed with a secret the server makes in `session-signing.key`, beside the database. It is not in
+  database backups and is never sent anywhere. Deleting it signs everyone out and a new one is made.
+- `BRANCH_SERVER_TOKEN` is still used by the server's own scripts (health check and updater).
+
 ## Signed Branch Updates
 
 The hosted admin page can check and install updates on a connected localhost

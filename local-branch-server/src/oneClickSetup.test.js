@@ -89,7 +89,10 @@ describe('one-step offline setup: wiring', () => {
     const check = at('--check')
     const install = at('& $installScript')
     const connect = at('& $connectScript')
-    const open = at('Start-Process $serverUrl')
+    const open = at('Start-Process $launchTarget')
+    // The shortcut registers the browser; the plain address is only the fallback.
+    expect(script).toContain("'HealthFlow Offline POS.url'")
+    expect(script).toContain('{ $posShortcut } else { $serverUrl }')
     expect(check).toBeLessThan(install)
     expect(install).toBeLessThan(connect)
     expect(connect).toBeLessThan(open)

@@ -444,6 +444,8 @@ export const AuthProvider = ({ children }) => {
     const restoreOfflineAuth = () => {
       const offlineSession = getSavedOfflineStaffSession()
       if (!offlineSession?.user?.id || !offlineSession?.profile?.id) return false
+      // Saved before the screens load, because they send requests with this role straight away.
+      storeActiveRole(offlineSession.role)
       setProfileLoadError('')
       setCachedSupabaseSession(null)
       setCachedSupabaseUser(null)
@@ -997,6 +999,7 @@ export const AuthProvider = ({ children }) => {
       pin,
     })
     recordSessionActivity(offlineSession.user.id)
+    storeActiveRole(offlineSession.role)
     setProfileLoadError('')
     sessionRef.current = offlineSession
     setCachedSupabaseSession(null)

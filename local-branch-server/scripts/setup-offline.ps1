@@ -268,9 +268,12 @@ if ($blockFromClipboard) {
 
 # --- Step 4: open the POS ---------------------------------------------------------------------------
 Write-Step 'Step 4 of 4: opening HealthFlow Offline'
+# The desktop shortcut registers the browser it opens in. The plain address would open a browser that is not connected.
+$posShortcut = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'HealthFlow Offline POS.url'
+$launchTarget = if (Test-Path -LiteralPath $posShortcut) { $posShortcut } else { $serverUrl }
 try {
-  Start-Process $serverUrl | Out-Null
-  Write-Host "Opened $serverUrl in your browser."
+  Start-Process $launchTarget | Out-Null
+  Write-Host 'Opened HealthFlow Offline in your browser.'
 } catch {
   Write-Host "Open $serverUrl, or use the 'HealthFlow Offline POS' desktop shortcut." -ForegroundColor Yellow
 }

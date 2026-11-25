@@ -563,7 +563,7 @@ const checkRecentNhisClaim = async () => {
 
 const checkLocalBranchServer = async () => {
   const config = getBranchServerConfig()
-  if (!config.enabled || !config.token) {
+  if (!config.enabled || !(config.token || config.authorized)) {
     return warn('Local branch server', {
       summary: 'Not configured in this browser',
       detail: 'Cloud mode can still operate normally.',

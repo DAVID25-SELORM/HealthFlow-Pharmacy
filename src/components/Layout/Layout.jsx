@@ -13,6 +13,7 @@ import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
 import FacilityContactReporter from '../FacilityContactReporter'
 import SubscriptionNotice from '../SubscriptionNotice'
 import BranchUpdateBanner from '../BranchUpdateBanner'
+import OfflineConnectionNotice from '../OfflineConnectionNotice'
 import ClaimExportAlerts from '../ClaimExportAlerts'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
@@ -156,6 +157,7 @@ const Layout = () => {
           pageTitle={pageTitle}
         />
         <main className="page-content">
+          <OfflineConnectionNotice />
           <BranchUpdateBanner />
           {location.pathname === '/billing' && <SubscriptionNotice />}
           <ClaimExportAlerts visible={location.pathname === '/export-notifications'} />

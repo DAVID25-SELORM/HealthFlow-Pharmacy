@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { isBranchServerEnabled } from '../services/branchServerApi'
+import OfflineConnectionNotice from '../components/OfflineConnectionNotice'
 import './Login.css'
 
 const LOGIN_BUILD_STAMP = 'HF-2026-06-08-branch-sync-v1'
@@ -197,6 +198,7 @@ const Login = () => {
               ? 'Create a new password for your account'
               : 'Sign in to manage pharmacy and facility operations'}
         </p>
+        <OfflineConnectionNotice />
         <p className="login-build-stamp">Build {LOGIN_BUILD_STAMP}</p>
 
         {!isConfigured && mode !== 'offline' && (

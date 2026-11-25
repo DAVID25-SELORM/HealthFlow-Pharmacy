@@ -313,7 +313,7 @@ export default function OfflineSync() {
     setConfig(nextConfig)
     setError('')
 
-    if (!nextConfig.enabled || !nextConfig.token) {
+    if (!nextConfig.enabled || !(nextConfig.token || nextConfig.authorized)) {
       setHealth(null)
       setStatus(null)
       setReadiness(null)
@@ -379,12 +379,12 @@ export default function OfflineSync() {
 
   useEffect(() => subscribeConnectivity(setConnectivity), [])
   useEffect(() => {
-    if (!config.enabled || !config.token) return undefined
+    if (!config.enabled || !(config.token || config.authorized)) return undefined
     const timer = window.setInterval(() => {
       if (!operationRef.current && !busyAction) void refreshStatus({ silent: true })
     }, 30000)
     return () => window.clearInterval(timer)
-  }, [config.enabled, config.token, busyAction, refreshStatus])
+  }, [config.enabled, config.token, config.authorized, busyAction, refreshStatus])
 
   const pullInventoryAndCache = async () => {
     const result = await pullBranchInventory()

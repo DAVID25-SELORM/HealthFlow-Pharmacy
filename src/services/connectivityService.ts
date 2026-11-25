@@ -1,14 +1,10 @@
 // OFFLINE-FIRST PATCH START
 import { debugInfo } from '../utils/debugLog'
+import { getHostedBranchConfig, getWorkstationHeaders, isRegisteredForServer } from './branchBrowserAccess'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
-
-const readHostedConfig = () => {
-  if (typeof window === 'undefined') return {} as Record<string, unknown>
-  return (window as any).__HEALTHFLOW_BRANCH_SERVER__ || {}
-}
 
 const readRuntimeConfig = () => {
   if (typeof window === 'undefined') return {} as Record<string, unknown>
@@ -25,7 +21,7 @@ const readBrowserBranchToken = () => {
 }
 
 const getConnectivityBranchServerConfig = () => {
-  const hostedConfig = readHostedConfig()
+  const hostedConfig = getHostedBranchConfig() as Record<string, unknown>
   const runtimeConfig = readRuntimeConfig()
   const browserToken = readBrowserBranchToken()
   const token = String(browserToken || runtimeConfig.token || hostedConfig.token || '')
@@ -38,16 +34,19 @@ const getConnectivityBranchServerConfig = () => {
     String((import.meta as any).env?.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true' &&
     Boolean(token)
 
+  const url = String(
+    runtimeConfig.url ||
+      hostedConfig.url ||
+      hostedUrl ||
+      (import.meta as any).env?.VITE_BRANCH_SERVER_URL ||
+      DEFAULT_BRANCH_SERVER_URL
+  ).replace(/\/+$/, '')
+
   return {
     enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig,
-    url: String(
-      runtimeConfig.url ||
-        hostedConfig.url ||
-        hostedUrl ||
-        (import.meta as any).env?.VITE_BRANCH_SERVER_URL ||
-        DEFAULT_BRANCH_SERVER_URL
-    ).replace(/\/+$/, ''),
+    url,
     token,
+    authorized: Boolean(token) || isRegisteredForServer(url),
     runtimeConfigured: Boolean(runtimeConfig.url && token),
   }
 }
@@ -60,6 +59,7 @@ const fetchBranchHealth = async (url: string, timeoutMs: number) => {
       headers: {
         Accept: 'application/json',
         'x-branch-token': getConnectivityBranchServerConfig().token,
+        ...getWorkstationHeaders(),
       },
       signal: controller.signal,
     })
@@ -149,7 +149,7 @@ export const refreshConnectivityState = async ({
     const shouldProbeBranchServer =
       branchConfig.enabled &&
       branchConfig.url &&
-      branchConfig.token
+      branchConfig.authorized
 
     if (shouldProbeBranchServer) {
       try {
@@ -186,7 +186,7 @@ export const subscribeConnectivity = (listener: (state: ConnectivityState) => vo
 
 export const shouldPreferLocalApi = () => {
   const branchConfig = getConnectivityBranchServerConfig()
-  if (!branchConfig.enabled || !branchConfig.url || !branchConfig.token) return false
+  if (!branchConfig.enabled || !branchConfig.url || !branchConfig.authorized) return false
   if (state.branchServerAvailable) return true
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
   return false

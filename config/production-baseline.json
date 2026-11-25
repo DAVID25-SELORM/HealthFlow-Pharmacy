@@ -8,7 +8,7 @@
   "testFileCount": 148,
   "criticalFiles": {
     "src/services/nhisService.js": "f25337c49762f6d78fb4c8bf371c5a46c569ca50bb120d5ab6d45d10cf5f9a94",
-    "src/context/AuthContext.jsx": "bc9a4238845d4f0254f58f623197b2404da98def22740d4389c0dabe8f1c1249",
+    "src/context/AuthContext.jsx": "37a7141f9f2511b233a596ca4151362a1d84bec5db7375809127c500b44b033a",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
     "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
@@ -92,5 +92,10 @@
     "date": "2026-11-22",
     "impactReport": "docs/nhis-serving-patient-phone-impact-2026-11-22.md",
     "description": "Optional patient telephone on the NHIS serving form, saved on the claim as a separate step after the claim; two new functions appended to nhisService, no existing function edited."
+  },
+  "pendingOfflineConnectionChange": {
+    "date": "2026-11-25",
+    "impactReport": "docs/offline-connection-impact-2026-11-25.md",
+    "description": "Offline staff stay signed in after a refresh: the offline session's role is saved before the screens load. Offline sign-in paths only"
   }
 }

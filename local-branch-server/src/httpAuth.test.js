@@ -1,8 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import {
-  BRANCH_AUTH_COOKIE,
-  requireBranchToken,
+  requireBranchAccess,
   requireBranchUserSession,
 } from './httpAuth.js'
 import { config } from './config.js'
@@ -16,19 +15,15 @@ const makeResponse = () => {
 }
 
 describe('branch HTTP authentication', () => {
-  it('accepts the HttpOnly session cookie used by the bundled local app', () => {
+  it('accepts the server key sent by its own scripts', () => {
     const originalToken = config.branchServerToken
     config.branchServerToken = 'test-branch-token-with-enough-entropy'
-    const request = {
-      get: vi.fn((name) => name === 'Cookie'
-        ? `${BRANCH_AUTH_COOKIE}=${encodeURIComponent(config.branchServerToken)}`
-        : ''),
-    }
+    const request = { get: vi.fn((name) => name === 'x-branch-token' ? config.branchServerToken : '') }
     const response = makeResponse()
     const next = vi.fn()
 
     try {
-      requireBranchToken(request, response, next)
+      requireBranchAccess(request, response, next)
       expect(next).toHaveBeenCalledOnce()
       expect(response.status).not.toHaveBeenCalled()
     } finally {
@@ -36,11 +31,31 @@ describe('branch HTTP authentication', () => {
     }
   })
 
-  it('rejects requests without a valid header or cookie token', () => {
+  it('does not accept the server key from a cookie, which the server no longer hands out', () => {
+    const originalToken = config.branchServerToken
+    config.branchServerToken = 'test-branch-token-with-enough-entropy'
+    const request = {
+      get: vi.fn((name) => name === 'Cookie'
+        ? `healthflow_branch_session=${config.branchServerToken}`
+        : ''),
+    }
+    const response = makeResponse()
+    const next = vi.fn()
+
+    try {
+      requireBranchAccess(request, response, next)
+      expect(next).not.toHaveBeenCalled()
+      expect(response.status).toHaveBeenCalledWith(401)
+    } finally {
+      config.branchServerToken = originalToken
+    }
+  })
+
+  it('rejects a request with no key and no registered computer', () => {
     const request = { get: vi.fn(() => '') }
     const response = makeResponse()
 
-    requireBranchToken(request, response, vi.fn())
+    requireBranchAccess(request, response, vi.fn())
 
     expect(response.status).toHaveBeenCalledWith(401)
   })

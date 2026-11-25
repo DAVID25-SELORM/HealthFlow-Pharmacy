@@ -29,6 +29,8 @@ data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
 local-branch-server/data/
+# Signs staff sessions on an offline server; never commit it.
+session-signing.key
 
 # Editor directories and files
 .vscode/*

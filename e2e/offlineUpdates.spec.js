@@ -4,6 +4,8 @@ import { findOffScreenProblems } from './support/layoutChecks.js'
 
 // The Updates tab and its notice, in the real built app, opened the way an offline server serves it:
 // /branch-runtime-config.js says this is a branch server, and the update routes answer. All values are invented.
+// This stand-in is for the screens at four sizes. That a real server says it is offline, and lets a registered
+// computer in, is checked against the real server in local-branch-server/src/offlineServerConnection.test.js.
 const SHOTS = process.env.UPDATE_SCREENSHOT_DIR || ''
 
 const WAITING = {
@@ -20,7 +22,14 @@ const WAITING = {
   installerReady: true,
 }
 
-const installFakeOfflineServer = async (page, role) => {
+const installFakeOfflineServer = async (page, role, { registered = true } = {}) => {
+  // What opening the "HealthFlow Offline POS" shortcut leaves in the browser.
+  if (registered) {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('healthflow.workstation.id', 'invented-computer')
+      window.localStorage.setItem('healthflow.workstation.secret', 'invented-computer-secret')
+    })
+  }
   let status = { ...WAITING }
   let polls = 0
   const calls = []
@@ -129,6 +138,18 @@ test('other staff see the notice and are asked to tell the administrator', async
   await shot(page, testInfo, '6-other-staff')
 })
 
+test('a browser that is not registered is told how to connect', async ({ page }, testInfo) => {
+  await installFakeBackend(page, 'admin')
+  const server = await installFakeOfflineServer(page, 'admin', { registered: false })
+
+  await page.goto('/sales')
+  await expect(page.locator('.offline-connection-notice')).toContainText('HealthFlow Offline POS')
+  await expect(page.locator('.branch-update-banner')).toHaveCount(0)
+  expect(server.calls.filter((call) => call.includes('/api/updates'))).toEqual([])
+  expect(await findOffScreenProblems(page)).toEqual([])
+  await shot(page, testInfo, '7-not-registered')
+})
+
 test('the online website has no Updates tab or update notice', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'computer', 'The menu rule is the same at every size.')
   await installFakeBackend(page, 'admin')
@@ -138,4 +159,5 @@ test('the online website has no Updates tab or update notice', async ({ page }, 
   await page.waitForLoadState('networkidle')
   await expect(page.locator('aside.sidebar').getByRole('link', { name: /^Updates/ })).toHaveCount(0)
   await expect(page.locator('.branch-update-banner')).toHaveCount(0)
+  await expect(page.locator('.offline-connection-notice')).toHaveCount(0)
 })

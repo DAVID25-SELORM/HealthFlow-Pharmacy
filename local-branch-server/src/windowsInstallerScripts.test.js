@@ -241,10 +241,12 @@ describe('Windows production installer scripts', () => {
 
     it('launches exactly once, only after reachability succeeds', () => {
       expect(installer).toMatch(
-        /if\s*\(\$reachable\)\s*\{[\s\S]*Start-Process \$serverUrl[\s\S]*\}\s*else\s*\{/
+        /if\s*\(\$reachable\)\s*\{[\s\S]*Start-Process \$launchTarget[\s\S]*\}\s*else\s*\{/
       )
-      expect((installer.match(/Start-Process \$serverUrl/g) || []).length).toBe(1)
-      expect(installer).not.toMatch(/Start-Process \$serverUrl\?/)
+      expect((installer.match(/Start-Process \$launchTarget/g) || []).length).toBe(1)
+      // The desktop shortcut registers the browser it opens; the plain address is only the fallback.
+      expect(installer).toContain('{ $posShortcut } else { $serverUrl }')
+      expect(installer).not.toMatch(/workstationSecret/)
       expect(installer).not.toMatch(/Start-Process .*(BRANCH_SERVER_TOKEN|BranchToken)/)
     })
 
@@ -257,7 +259,7 @@ describe('Windows production installer scripts', () => {
     })
 
     it('does not fail the install and still prints a manual instruction if the browser launch itself throws', () => {
-      expect(installer).toMatch(/try\s*\{[\s\S]*Start-Process \$serverUrl[\s\S]*\}\s*catch\s*\{/)
+      expect(installer).toMatch(/try\s*\{[\s\S]*Start-Process \$launchTarget[\s\S]*\}\s*catch\s*\{/)
       expect(installer).toContain('Could not open the browser automatically.')
       expect(installer).toContain("desktop shortcut, to continue setup.")
     })

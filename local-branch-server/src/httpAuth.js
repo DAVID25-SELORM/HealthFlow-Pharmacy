@@ -2,8 +2,9 @@ import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { config } from './config.js'
 import { db, parseJson } from './db.js'
+import { getSessionSecret } from './sessionSecret.js'
+import { findActiveWorkstation } from './workstationRepository.js'
 
-export const BRANCH_AUTH_COOKIE = 'healthflow_branch_session'
 const BRANCH_USER_SESSION_TTL_SECONDS = config.offlineSessionHours * 60 * 60
 const selectCurrentStaff = db.prepare(`
   SELECT id, role, assigned_roles_json, organization_id, branch_id, permissions_json,
@@ -43,39 +44,27 @@ const safeTokenEquals = (actual, expected) => {
   return crypto.timingSafeEqual(actualBuffer, expectedBuffer)
 }
 
-const readCookie = (request, name) => {
-  const cookieHeader = String(request.get('Cookie') || '')
-  for (const part of cookieHeader.split(';')) {
-    const [key, ...valueParts] = part.trim().split('=')
-    if (key === name) {
-      return decodeURIComponent(valueParts.join('=') || '')
-    }
-  }
-  return ''
-}
-
-export const getBranchAuthCookie = () =>
-  `${BRANCH_AUTH_COOKIE}=${encodeURIComponent(config.branchServerToken)}; Path=/; HttpOnly; SameSite=Strict${config.tls.enabled ? '; Secure' : ''}`
-
-export const requireBranchToken = (request, response, next) => {
-  const token =
-    request.get('x-branch-token') ||
-    readCookie(request, BRANCH_AUTH_COOKIE) ||
-    ''
-
-  if (!safeTokenEquals(token, config.branchServerToken)) {
-    response.status(401).json({ error: 'Branch server token is invalid or missing.' })
+// Two ways in: the server's own key (its scripts, and a browser where an administrator typed it in), or the id and
+// secret of a registered computer. The server never hands its own key to a browser.
+export const requireBranchAccess = (request, response, next) => {
+  if (
+    safeTokenEquals(request.get('x-branch-token') || '', config.branchServerToken) ||
+    findActiveWorkstation(request)
+  ) {
+    next()
     return
   }
 
-  next()
+  response.status(401).json({
+    error: 'This computer is not connected to the offline server. Open HealthFlow from the "HealthFlow Offline POS" desktop shortcut.',
+  })
 }
 
 const encodeSessionPart = (value) =>
   Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
 
 const signSessionPart = (value) =>
-  crypto.createHmac('sha256', config.branchServerToken).update(value).digest('base64url')
+  crypto.createHmac('sha256', getSessionSecret()).update(value).digest('base64url')
 
 const parseSignedSession = (token) => {
   const [payloadPart, signature] = String(token || '').split('.')

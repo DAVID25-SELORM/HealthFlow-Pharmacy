@@ -44,20 +44,42 @@ describe('branchServerApi', () => {
     expect(window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)).toBeNull()
   })
 
-  it('enables the bundled same-origin branch app without exposing a JavaScript token', async () => {
-    window.__HEALTHFLOW_BRANCH_SERVER__ = {
-      enabled: true,
-      url: window.location.origin,
-      token: '',
-    }
+  it('connects a registered computer to the server that served the page, without any server key', async () => {
+    window.__HEALTHFLOW_BRANCH_SERVER__ = { enabled: true, url: window.location.origin, token: '' }
+    window.localStorage.setItem('healthflow.workstation.id', 'invented-computer')
+    window.localStorage.setItem('healthflow.workstation.secret', 'invented-computer-secret')
+    const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
 
-    const { getBranchServerConfig, isBranchServerEnabled } = await importBranchServerApi()
+    const { getBranchServerConfig, getBranchServerHealth, isBranchServerEnabled } = await importBranchServerApi()
 
-    expect(getBranchServerConfig()).toMatchObject({
-      enabled: true,
-      token: '',
-    })
+    expect(getBranchServerConfig()).toMatchObject({ enabled: true, token: '', registeredComputer: true, authorized: true })
     expect(isBranchServerEnabled()).toBe(true)
+    await getBranchServerHealth()
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
+      'x-healthflow-workstation-id': 'invented-computer',
+      'x-healthflow-workstation-secret': 'invented-computer-secret',
+    })
+  })
+
+  it('does not treat a browser that is not registered as connected', async () => {
+    window.__HEALTHFLOW_BRANCH_SERVER__ = { enabled: true, url: window.location.origin, token: '' }
+
+    const { getBranchServerConfig, isBranchServerEnabled, isServedByOfflineServer } = await importBranchServerApi()
+
+    expect(isServedByOfflineServer()).toBe(true)
+    expect(getBranchServerConfig()).toMatchObject({ registeredComputer: false, authorized: false })
+    expect(isBranchServerEnabled()).toBe(false)
+  })
+
+  it('does not use a computer registration with any other server', async () => {
+    window.__HEALTHFLOW_BRANCH_SERVER__ = { enabled: true, url: 'https://another-server.test:4780', token: '' }
+    window.localStorage.setItem('healthflow.workstation.id', 'invented-computer')
+    window.localStorage.setItem('healthflow.workstation.secret', 'invented-computer-secret')
+
+    const { isBranchServerEnabled } = await importBranchServerApi()
+
+    expect(isBranchServerEnabled()).toBe(false)
   })
 
   it('sends the localStorage branch token on local branch API requests', async () => {

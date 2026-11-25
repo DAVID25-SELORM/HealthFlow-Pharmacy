@@ -73,7 +73,7 @@ describe('every route behind the staff sign-in', () => {
           .toEqual([role, request, OPEN_TO_ALL_STAFF.includes(request) ? 200 : 403])
       }
     }
-  })
+  }, 60000) // Over two hundred real requests: too many for the default limit on a busy computer.
 
   it('has a rule, so an administrator reaches every one', async () => {
     await expectAllowed('admin', ROUTES.map(({ method, route }) => `${method} ${route}`))

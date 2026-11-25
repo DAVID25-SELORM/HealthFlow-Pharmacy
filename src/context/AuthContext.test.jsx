@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from './AuthContext'
 
@@ -1171,5 +1172,60 @@ describe('AuthProvider', () => {
     })
     expect(mocks.auth.verifyOtp).not.toHaveBeenCalled()
     expect(window.location.search).toBe('?mode=recovery')
+  })
+
+  describe('offline staff sign-in on an offline server', () => {
+    const saveOfflineSignIn = (extra = {}) => window.localStorage.setItem(
+      'healthflow_branch_user_session',
+      JSON.stringify({
+        token: 'invented-session', offline: true, role: 'cashier',
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: 'test-cashier', email: 'cashier@example.test', fullName: 'Invented Cashier' },
+        profile: { id: 'test-cashier', full_name: 'Invented Cashier', role: 'cashier', assigned_roles: ['cashier'] },
+        ...extra,
+      })
+    )
+
+    // A screen sends requests as soon as it appears, so it records the saved role at that very moment.
+    const rolesSeenByFirstScreen = []
+    const FirstScreen = () => {
+      useEffect(() => {
+        rolesSeenByFirstScreen.push(window.localStorage.getItem('healthflow.active-role.current'))
+      }, [])
+      return null
+    }
+    const SignedInScreen = () => {
+      const { isAuthenticated, loading, role } = useAuth()
+      if (loading) return <div data-testid="offline-state">loading</div>
+      return (
+        <div data-testid="offline-state">
+          {isAuthenticated ? <>signed-in:{role}<FirstScreen /></> : 'signed-out'}
+        </div>
+      )
+    }
+
+    beforeEach(() => {
+      rolesSeenByFirstScreen.length = 0
+      mocks.auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
+    })
+
+    it('stays signed in after a refresh, with its own role saved before the first screen asks for anything', async () => {
+      saveOfflineSignIn()
+      render(<AuthProvider><SignedInScreen /></AuthProvider>)
+
+      await waitFor(() => expect(screen.getByTestId('offline-state')).toHaveTextContent('signed-in:cashier'))
+      expect(rolesSeenByFirstScreen[0]).toBe('cashier')
+      await waitFor(() => expect(window.localStorage.getItem('healthflow.active-role.current')).toBe('cashier'))
+    })
+
+    it.each([
+      ['has expired', { expiresAt: Math.floor(Date.now() / 1000) - 60 }],
+      ['was not an offline sign-in', { offline: false }],
+    ])('is not restored when the saved sign-in %s', async (_reason, change) => {
+      saveOfflineSignIn(change)
+      render(<AuthProvider><SignedInScreen /></AuthProvider>)
+
+      await waitFor(() => expect(screen.getByTestId('offline-state')).toHaveTextContent('signed-out'))
+    })
   })
 })

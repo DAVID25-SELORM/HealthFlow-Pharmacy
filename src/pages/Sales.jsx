@@ -1300,7 +1300,7 @@ const Sales = () => {
     const config = getBranchServerConfig()
     setBranchServerConfig(config)
 
-    if (!config.enabled || !config.token) {
+    if (!isBranchServerEnabled()) {
       setBranchServerStatus({
         checked: true,
         online: false,

@@ -1,7 +1,7 @@
 // Presentation only: retain the server's readiness and freshness decisions.
 export const getOfflineModeSummary = ({ config = {}, health, readiness, status, organizationId, branchId, busy = '', test, productionVerification, internetAvailable = true } = {}) => {
   const connected = Boolean(health?.ok)
-  const configured = Boolean(config.enabled && config.token)
+  const configured = Boolean(config.enabled && (config.token || config.authorized))
   const identityMatches = Boolean(organizationId && branchId && readiness?.organizationId === organizationId && readiness?.branchId === branchId)
   const failed = Math.max(Number(status?.failed ?? status?.summary?.failed ?? 0), Number(readiness?.queue?.failed ?? 0))
   const syncing = Number(status?.syncing ?? status?.summary?.syncing ?? 0)
