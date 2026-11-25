@@ -118,6 +118,8 @@ const patientKeyOf = (claim = {}) => {
   if (member) return `member:${member}`
   const folder = text(claim.folder_no).toUpperCase().replace(/\s+/g, '')
   if (folder) return `folder:${folder}`
+  const patientId = text(claim.patient_id)
+  if (patientId) return `patient:${patientId}`
   return `name:${[claim.surname, claim.other_names, claim.date_of_birth].map((part) => text(part).toLowerCase()).join('|')}`
 }
 
@@ -143,39 +145,50 @@ export const buildMedicineSearchResult = ({ lines = [], groups = [] } = {}) => {
   }]))
   const allClaimIds = new Set()
   let totalAmount = 0
+  let walkInLines = 0
 
   for (const line of lines) {
     const claim = line?.claim || {}
-    if (!counted.has(text(claim.status).toLowerCase())) continue
+    const isCash = line?.source === 'cash'
+    // Cash sale lines arrive already limited to completed sales; claim lines must be served, submitted or paid.
+    if (!isCash && !counted.has(text(claim.status).toLowerCase())) continue
     const quantity = getGivenQuantity(line)
     if (quantity <= 0) continue
     const matched = groups.filter((group) => lineMatches(line, group))
     if (!matched.length) continue
+    if (isCash && line.hasPatient === false) { walkInLines += 1; continue }
 
     const amount = getLineAmount(line)
     const patientKey = patientKeyOf(claim)
+    const source = isCash ? 'cash' : 'nhis'
     const date = line.dispensary_date || claim.service_date_from || ''
-    const claimId = String(claim.id ?? line.claim_id ?? '')
+    const recordId = `${source}:${claim.id ?? line.claim_id ?? ''}`
 
     details.push({
-      date, claim, line, quantity, amount, patientKey, searchedAs: matched.map((group) => group.label).join(' / '),
+      date, claim, line, quantity, amount, patientKey, source,
+      searchedAs: matched.map((group) => group.label).join(' / '),
     })
-    allClaimIds.add(claimId)
+    allClaimIds.add(recordId)
     totalAmount += amount
 
     let patient = patientMap.get(patientKey)
     if (!patient) {
       patient = {
-        key: patientKey, claim, claimIds: new Set(), medicines: new Map(), firstDate: date, lastDate: date, amount: 0,
+        key: patientKey, claim, claimIds: new Set(), medicines: new Map(), sources: new Set(),
+        firstDate: date, lastDate: date, amount: 0, claimSource: source,
       }
       patientMap.set(patientKey, patient)
     }
+    const claimId = recordId
     patient.claimIds.add(claimId)
+    patient.sources.add(source)
     patient.amount += amount
     if (date && (!patient.firstDate || date < patient.firstDate)) patient.firstDate = date
     if (date && date > patient.lastDate) patient.lastDate = date
-    // keep the most recent claim's details for the name and numbers
-    if (date && date >= patient.lastDate) patient.claim = claim
+    // Show the name and numbers from the most recent record, preferring a claim over a sale (claims are typed
+    // as on the member's card; a sale only has the patient's registered name).
+    const takesOver = patient.claimSource === source ? (date && date >= patient.lastDate) : source === 'nhis'
+    if (takesOver) { patient.claim = claim; patient.claimSource = source }
 
     for (const group of matched) {
       const medicine = patient.medicines.get(group.label) || { quantity: 0, claimIds: new Set() }
@@ -205,6 +218,7 @@ export const buildMedicineSearchResult = ({ lines = [], groups = [] } = {}) => {
       dateOfBirth: patient.claim.date_of_birth,
       gender: patient.claim.gender,
       claimCount: patient.claimIds.size,
+      sources: ['nhis', 'cash'].filter((source) => patient.sources.has(source)),
       firstDate: patient.firstDate,
       lastDate: patient.lastDate,
       amount: cleanMoney(patient.amount),
@@ -230,31 +244,37 @@ export const buildMedicineSearchResult = ({ lines = [], groups = [] } = {}) => {
     patients,
     details,
     totals: { patients: patients.length, claims: allClaimIds.size, amount: cleanMoney(totalAmount) },
+    walkInLines,
   }
 }
+
+export const SOURCE_LABELS = { nhis: 'NHIS claim', cash: 'Cash sale' }
+export const describeSources = (sources = []) => sources.map((source) => SOURCE_LABELS[source]).filter(Boolean).join(' + ')
 
 export const describePatientMedicines = (patient) =>
   patient.medicines.map((medicine) => `${medicine.label} ×${formatQuantity(medicine.quantity)}`).join('; ')
 
 // ── the workbook ───────────────────────────────────────────────────────────────────────────────────────────
-const SUMMARY_HEADERS = ['MEDICINE SEARCHED', 'PATIENTS', 'CLAIMS', 'QUANTITY GIVEN', 'AMOUNT (GHC)']
+const SUMMARY_HEADERS = ['MEDICINE SEARCHED', 'PATIENTS', 'CLAIMS / SALES', 'QUANTITY GIVEN', 'AMOUNT (GHC)']
 const PATIENT_HEADERS = [
-  'No', 'SURNAME', 'OTHER NAMES', 'DOB', 'GENDER', 'MEMBER NO.', 'FOLDER NO.', 'MEDICINES GIVEN', 'CLAIMS',
-  'FIRST DATE', 'LAST DATE', 'AMOUNT (GHC)',
+  'No', 'SURNAME', 'OTHER NAMES', 'DOB', 'GENDER', 'MEMBER NO.', 'FOLDER NO.', 'MEDICINES GIVEN', 'GIVEN VIA',
+  'CLAIMS / SALES', 'FIRST DATE', 'LAST DATE', 'AMOUNT (GHC)',
 ]
 const DETAIL_HEADERS = [
-  'No', 'DATE', 'SURNAME', 'OTHER NAMES', 'MEMBER NO.', 'FOLDER NO.', 'CCC', 'CLAIM NO.', 'MEDICINE ON CLAIM',
-  'SEARCHED AS', 'QUANTITY', 'UNIT PRICE (GHC)', 'AMOUNT (GHC)',
+  'No', 'DATE', 'SURNAME', 'OTHER NAMES', 'MEMBER NO.', 'FOLDER NO.', 'CCC', 'CLAIM / SALE NO.', 'SOURCE',
+  'MEDICINE AS RECORDED', 'SEARCHED AS', 'QUANTITY', 'UNIT PRICE (GHC)', 'AMOUNT (GHC)',
 ]
 
 const titleRow = (title, columnCount) => [bannerCell(title, columnCount, 13), ...blanks(columnCount - 1)]
 
+const SOURCE_HEADING = { nhis: ' · NHIS CLAIMS ONLY', cash: ' · CASH SALES ONLY' }
+
 export const buildMedicineSearchSheets = ({
-  result, groups = [], facilityName = '', fromMonth = '', toMonth = '',
+  result, groups = [], facilityName = '', fromMonth = '', toMonth = '', source = 'all',
 } = {}) => {
   const safeResult = result || buildMedicineSearchResult({ lines: [], groups })
   const period = formatSearchPeriod(fromMonth, toMonth)
-  const heading = `${facilityTitle(facilityName)} · PATIENTS GIVEN SELECTED MEDICINES${period ? ` · ${period}` : ''}`
+  const heading = `${facilityTitle(facilityName)} · PATIENTS GIVEN SELECTED MEDICINES${period ? ` · ${period}` : ''}${SOURCE_HEADING[source] || ''}`
 
   const summaryRows = safeResult.summary.map((entry, index) => [
     textCell(entry.label, index),
@@ -280,6 +300,7 @@ export const buildMedicineSearchSheets = ({
     textCell(patient.memberNo, index),
     textCell(patient.folderNo, index),
     textCell(describePatientMedicines(patient), index, { wrap: true }),
+    textCell(describeSources(patient.sources), index, { wrap: true }),
     { ...bodyCell(patient.claimCount, index, { align: 'center' }), type: Number },
     dateCell(patient.firstDate, index),
     dateCell(patient.lastDate, index),
@@ -288,7 +309,7 @@ export const buildMedicineSearchSheets = ({
   const patientTotal = [
     totalCell('TOTAL', { align: 'center' }),
     totalCell(`${safeResult.totals.patients} patient${safeResult.totals.patients === 1 ? '' : 's'}`),
-    ...blanks(9).map(() => totalCell('')),
+    ...blanks(10).map(() => totalCell('')),
     totalMoney(safeResult.totals.amount),
   ]
 
@@ -301,6 +322,7 @@ export const buildMedicineSearchSheets = ({
     textCell(entry.claim.folder_no, index),
     textCell(entry.claim.ccc_no, index, { align: 'center' }),
     textCell(entry.claim.claim_number, index),
+    textCell(SOURCE_LABELS[entry.source], index),
     textCell(entry.line.description, index, { wrap: true }),
     textCell(entry.searchedAs, index, { wrap: true }),
     { ...bodyCell(entry.quantity, index, { align: 'right', format: '#,##0.##' }), type: Number },
@@ -308,12 +330,16 @@ export const buildMedicineSearchSheets = ({
     numberCell(entry.amount, index),
   ])
 
+  const walkInNote = safeResult.walkInLines > 0
+    ? [[textCell(`${safeResult.walkInLines} cash sale line${safeResult.walkInLines === 1 ? '' : 's'} with no patient recorded ${safeResult.walkInLines === 1 ? 'was' : 'were'} left out.`, 0, { wrap: false })]]
+    : []
+
   const columns = (widths) => widths.map((width) => ({ width }))
 
   return [
     {
       sheet: 'SUMMARY',
-      data: [titleRow(heading, SUMMARY_HEADERS.length), SUMMARY_HEADERS.map(headerCell), ...summaryRows, summaryTotal],
+      data: [titleRow(heading, SUMMARY_HEADERS.length), SUMMARY_HEADERS.map(headerCell), ...summaryRows, summaryTotal, ...walkInNote],
       columns: columns([44, 12, 12, 16, 16]),
       stickyRowsCount: 2,
       orientation: 'landscape',
@@ -321,14 +347,14 @@ export const buildMedicineSearchSheets = ({
     {
       sheet: 'PATIENTS',
       data: [titleRow(heading, PATIENT_HEADERS.length), PATIENT_HEADERS.map(headerCell), ...patientRows, patientTotal],
-      columns: columns([6, 18, 26, 12, 9, 16, 14, 52, 9, 12, 12, 15]),
+      columns: columns([6, 18, 26, 12, 9, 16, 14, 52, 20, 10, 12, 12, 15]),
       stickyRowsCount: 2,
       orientation: 'landscape',
     },
     {
       sheet: 'DETAILS',
       data: [titleRow(heading, DETAIL_HEADERS.length), DETAIL_HEADERS.map(headerCell), ...detailRows],
-      columns: columns([6, 12, 18, 26, 16, 14, 11, 18, 44, 28, 11, 15, 15]),
+      columns: columns([6, 12, 18, 26, 16, 14, 11, 18, 12, 44, 28, 11, 15, 15]),
       stickyRowsCount: 2,
       orientation: 'landscape',
     },

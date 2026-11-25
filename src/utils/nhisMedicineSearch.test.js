@@ -5,6 +5,7 @@ import {
   buildMedicineSearchResult,
   buildMedicineSearchSheets,
   describePatientMedicines,
+  describeSources,
   formatSearchPeriod,
   getGivenQuantity,
   loadSavedMedicineList,
@@ -259,8 +260,9 @@ describe('the Excel workbook', () => {
   it('lists one detail row per claim line with the medicine as written on the claim', () => {
     const rows = sheets[2].data.slice(2)
     expect(rows).toHaveLength(2)
-    expect(rows.map((row) => row[8].value)).toEqual(['Tamoxifen 20mg', 'Capecitabine 500mg'])
-    expect(rows.map((row) => row[9].value)).toEqual(['Tamoxifen', 'Xeloda (Capecitabine)'])
+    expect(rows.map((row) => row[8].value)).toEqual(['NHIS claim', 'NHIS claim'])
+    expect(rows.map((row) => row[9].value)).toEqual(['Tamoxifen 20mg', 'Capecitabine 500mg'])
+    expect(rows.map((row) => row[10].value)).toEqual(['Tamoxifen', 'Xeloda (Capecitabine)'])
     expect(rows[0][1].type).toBe(Date)
   })
 
@@ -291,5 +293,86 @@ describe('remembering the typed list', () => {
     expect(saveMedicineList(broken, 'org1', LIST)).toBe(false)
     expect(loadSavedMedicineList(broken, 'org1')).toBe('')
     expect(loadSavedMedicineList(null, 'org1')).toBe('')
+  })
+})
+
+describe('cash sales alongside claims', () => {
+  const { groups } = parseMedicineSearch('Tamoxifen, Anastrozole (Arimidex)')
+
+  const sale = (id, description, overrides = {}) => ({
+    id: `S${id}`,
+    claim_id: `sale-${id}`,
+    source: 'cash',
+    hasPatient: true,
+    description,
+    unit_price: 5,
+    dispensed_qty: 4,
+    served_qty: 0,
+    total_amount: 20,
+    dispensary_date: '2026-10-08',
+    claim: {
+      id: `sale-${id}`, claim_number: `SL-${id}`, status: 'completed', surname: 'Kwesi Mensah', other_names: '',
+      member_no: '', folder_no: 'P-7', patient_id: 'pat-7', ccc_no: '', gender: 'Male', date_of_birth: null,
+      service_date_from: '2026-10-08',
+    },
+    ...overrides,
+  })
+
+  it('counts a completed cash sale for a registered patient', () => {
+    const result = buildMedicineSearchResult({ groups, lines: [sale(1, 'Anastrozole 1mg tablet')] })
+    expect(result.totals).toEqual({ patients: 1, claims: 1, amount: 20 })
+    expect(result.patients[0].sources).toEqual(['cash'])
+    expect(describeSources(result.patients[0].sources)).toBe('Cash sale')
+    expect(result.details[0].source).toBe('cash')
+  })
+
+  it('leaves out sales with no patient and counts them', () => {
+    const result = buildMedicineSearchResult({
+      groups,
+      lines: [sale(1, 'Anastrozole 1mg', { hasPatient: false }), sale(2, 'Anastrozole 1mg', { hasPatient: false }), sale(3, 'Paracetamol', { hasPatient: false })],
+    })
+    expect(result.totals.patients).toBe(0)
+    expect(result.walkInLines).toBe(2)
+  })
+
+  it('does not count a cash sale line nothing was sold on', () => {
+    const result = buildMedicineSearchResult({ groups, lines: [sale(1, 'Tamoxifen 20mg', { dispensed_qty: 0 })] })
+    expect(result.totals.patients).toBe(0)
+  })
+
+  it('counts one person once when they got the medicine by claim and by cash, matched on member number', () => {
+    const viaClaim = line(1, 'Tamoxifen 20mg', claim('1', { surname: 'ADDO', member_no: '1000001' }), { source: 'nhis' })
+    const viaCash = sale(2, 'Tamoxifen 20mg', {
+      claim: { ...sale(2, '').claim, surname: 'Ama Addo', member_no: '1000 001', folder_no: 'P-1', service_date_from: '2026-11-20' },
+      dispensary_date: '2026-11-20',
+    })
+    const result = buildMedicineSearchResult({ groups, lines: [viaClaim, viaCash] })
+    expect(result.totals.patients).toBe(1)
+    expect(result.totals.claims).toBe(2)
+    expect(result.patients[0].sources).toEqual(['nhis', 'cash'])
+    expect(describeSources(result.patients[0].sources)).toBe('NHIS claim + Cash sale')
+    expect(result.patients[0].lastDate).toBe('2026-11-20')
+    // the claim's spelling of the name wins over the registered name on the sale
+    expect(result.patients[0].surname).toBe('ADDO')
+  })
+
+  it('keeps a claim and a sale with the same number apart when they are different records', () => {
+    const viaClaim = line(1, 'Tamoxifen 20mg', claim('7', { member_no: '1000007' }), { source: 'nhis' })
+    const viaCash = sale(7, 'Tamoxifen 20mg')
+    expect(buildMedicineSearchResult({ groups, lines: [viaClaim, viaCash] }).totals.claims).toBe(2)
+  })
+
+  it('shows the source in the workbook and notes left-out sales', () => {
+    const result = buildMedicineSearchResult({
+      groups,
+      lines: [sale(1, 'Anastrozole 1mg'), sale(2, 'Anastrozole 1mg', { hasPatient: false })],
+    })
+    const sheets = buildMedicineSearchSheets({ result, groups, facilityName: 'Sample Chemist', fromMonth: '2026-10', toMonth: '2026-10', source: 'cash' })
+    expect(sheets[0].data[0][0].value).toContain('CASH SALES ONLY')
+    expect(sheets[0].data.at(-1)[0].value).toBe('1 cash sale line with no patient recorded was left out.')
+    expect(sheets[1].data[1].map((cell) => cell.value)).toContain('GIVEN VIA')
+    expect(sheets[1].data[2][8].value).toBe('Cash sale')
+    expect(sheets[2].data[1].map((cell) => cell.value)).toContain('SOURCE')
+    expect(sheets[2].data[2][8].value).toBe('Cash sale')
   })
 })

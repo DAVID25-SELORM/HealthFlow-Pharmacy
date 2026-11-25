@@ -9,7 +9,7 @@ vi.mock('write-excel-file/browser', () => ({
     return { toFile: vi.fn(async (name) => { call.fileName = name }) }
   }),
 }))
-vi.mock('../services/nhisMedicineSearchService', () => ({ searchNhisClaimMedicines: vi.fn() }))
+vi.mock('../services/nhisMedicineSearchService', () => ({ searchMedicineLines: vi.fn() }))
 vi.mock('../services/auditService', () => ({ logAuditEvent: vi.fn() }))
 
 import NhisMedicineSearch from './NhisMedicineSearch'
@@ -41,6 +41,24 @@ const line = (id, description, claimRow, overrides = {}) => ({
   ...overrides,
 })
 
+const cashLine = (id, description, name, overrides = {}) => ({
+  id: `S${id}`,
+  claim_id: `sale-${id}`,
+  source: 'cash',
+  hasPatient: true,
+  description,
+  unit_price: 5,
+  dispensed_qty: 4,
+  served_qty: 0,
+  total_amount: 20,
+  dispensary_date: '2026-10-08',
+  claim: {
+    id: `sale-${id}`, claim_number: `SL-${id}`, status: 'completed', surname: name, other_names: '', member_no: '',
+    folder_no: `P${id}`, ccc_no: '', gender: 'Male', date_of_birth: null, service_date_from: '2026-10-08',
+  },
+  ...overrides,
+})
+
 const LINES = [
   line(1, 'Tamoxifen Tablet 20mg', claim('1', 'ALPHA'), { dispensed_qty: 30, total_amount: 60 }),
   line(2, 'Capecitabine Tablet 500mg', claim('2', 'BETA'), { dispensed_qty: 10, total_amount: 150 }),
@@ -68,6 +86,38 @@ const typeList = (value) => fireEvent.change(screen.getByLabelText('Medicines to
 const search = () => fireEvent.click(screen.getByRole('button', { name: /Search/ }))
 
 describe('medicine search screen', () => {
+  it('looks in NHIS claims and cash sales unless told otherwise, and can be narrowed', async () => {
+    const { searchMedicines } = renderScreen()
+    expect(screen.getByLabelText('Look in')).toHaveValue('all')
+    typeList('Tamoxifen')
+    search()
+    await screen.findByText(/ALPHA AMA/)
+    expect(searchMedicines.mock.calls[0][0].source).toBe('all')
+
+    fireEvent.change(screen.getByLabelText('Look in'), { target: { value: 'cash' } })
+    search()
+    await waitFor(() => expect(searchMedicines).toHaveBeenCalledTimes(2))
+    expect(searchMedicines.mock.calls[1][0].source).toBe('cash')
+  })
+
+  it('lists cash-sale patients with how they were given the medicine, and says how many walk-in lines were left out', async () => {
+    renderScreen({
+      searchMedicines: vi.fn(async () => [
+        ...LINES,
+        cashLine(1, 'Anastrozole 1mg', 'Kwesi Mensah'),
+        cashLine(2, 'Anastrozole 1mg', '', { hasPatient: false }),
+      ]),
+    })
+    typeList('Tamoxifen, Anastrozole (Arimidex)')
+    search()
+    const row = (await screen.findByText(/Kwesi Mensah/)).closest('tr')
+    expect(row).toHaveTextContent('Cash sale')
+    expect(row).toHaveTextContent('Anastrozole (Arimidex) ×4')
+    expect(screen.getByText(/ALPHA AMA/).closest('tr')).toHaveTextContent('NHIS claim')
+    expect(screen.getByText(/1 cash sale line with no patient recorded was left out/)).toBeInTheDocument()
+  })
+
+
   beforeEach(() => {
     writeCalls.length = 0
     window.localStorage.clear()
@@ -143,7 +193,7 @@ describe('medicine search screen', () => {
     await waitFor(() => expect(recordAudit).toHaveBeenCalledTimes(1))
     const audit = recordAudit.mock.calls[0][0]
     expect(audit).toMatchObject({ eventType: 'nhis_medicine_search_export', action: 'export' })
-    expect(audit.details).toMatchObject({ medicines_searched: 2, patients: 2 })
+    expect(audit.details).toMatchObject({ medicines_searched: 2, patients: 2, source: 'all' })
     expect(JSON.stringify(audit)).not.toMatch(/ALPHA|BETA|2000|Tamoxifen|Capecitabine/)
   })
 

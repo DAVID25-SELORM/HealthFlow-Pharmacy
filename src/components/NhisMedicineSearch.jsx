@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Download, Pill, Search, X } from 'lucide-react'
 import writeExcelFile from 'write-excel-file/browser'
-import { searchNhisClaimMedicines } from '../services/nhisMedicineSearchService'
+import { searchMedicineLines } from '../services/nhisMedicineSearchService'
 import { logAuditEvent } from '../services/auditService'
 import {
   allSearchTerms,
@@ -9,6 +9,7 @@ import {
   buildMedicineSearchResult,
   buildMedicineSearchSheets,
   describePatientMedicines,
+  describeSources,
   formatReportDate,
   formatSearchPeriod,
   loadSavedMedicineList,
@@ -26,13 +27,19 @@ const quantity = (value) => Number(value || 0).toLocaleString('en-GH', { maximum
 const getStorage = () => { try { return window.localStorage } catch { return null } }
 const patientName = (patient) => [patient.surname, patient.otherNames].filter(Boolean).join(' ') || 'Unnamed patient'
 
+const SOURCE_CHOICES = [
+  { value: 'all', label: 'NHIS claims and cash sales' },
+  { value: 'nhis', label: 'NHIS claims only' },
+  { value: 'cash', label: 'Cash sales only' },
+]
+
 const currentMonth = () => buildMonthOptions('')[0]
 const twoMonthsBack = () => buildMonthOptions('')[2]
 
 export default function NhisMedicineSearch({
   organizationId = '',
   facilityName = '',
-  searchMedicines = searchNhisClaimMedicines,
+  searchMedicines = searchMedicineLines,
   recordAudit = logAuditEvent,
   onClose,
   notify = () => {},
@@ -40,6 +47,7 @@ export default function NhisMedicineSearch({
   const [listText, setListText] = useState(() => loadSavedMedicineList(getStorage(), organizationId))
   const [fromMonth, setFromMonth] = useState(twoMonthsBack)
   const [toMonth, setToMonth] = useState(currentMonth)
+  const [source, setSource] = useState('all')
   const [searched, setSearched] = useState(null) // { groups, result, fromMonth, toMonth }
   const [ignored, setIgnored] = useState([])
   const [loading, setLoading] = useState(false)
@@ -84,11 +92,11 @@ export default function NhisMedicineSearch({
     saveMedicineList(getStorage(), organizationId, listText)
     try {
       const lines = await searchMedicines({
-        organizationId, fromDate: range.fromDate, toDate: range.toDate, terms: allSearchTerms(groups),
+        organizationId, fromDate: range.fromDate, toDate: range.toDate, terms: allSearchTerms(groups), source,
       })
       if (token !== searchToken.current) return
       setSearched({
-        groups, fromMonth: range.fromMonth, toMonth: range.toMonth,
+        groups, source, fromMonth: range.fromMonth, toMonth: range.toMonth,
         result: buildMedicineSearchResult({ lines, groups }),
       })
     } catch (searchError) {
@@ -105,7 +113,7 @@ export default function NhisMedicineSearch({
     try {
       const sheets = buildMedicineSearchSheets({
         result: searched.result, groups: searched.groups, facilityName,
-        fromMonth: searched.fromMonth, toMonth: searched.toMonth,
+        fromMonth: searched.fromMonth, toMonth: searched.toMonth, source: searched.source,
       })
       await writeExcelFile(sheets, { fontFamily: 'Calibri', fontSize: 11 })
         .toFile(buildMedicineSearchFileName(facilityName, searched.fromMonth, searched.toMonth))
@@ -119,6 +127,7 @@ export default function NhisMedicineSearch({
           details: {
             organization_id: organizationId,
             medicines_searched: searched.groups.length,
+            source: searched.source,
             patients: searched.result.totals.patients,
             from_month: searched.fromMonth,
             to_month: searched.toMonth,
@@ -172,6 +181,12 @@ export default function NhisMedicineSearch({
                 {toOptions.map((option) => <option key={option} value={option}>{formatReportMonth(option)}</option>)}
               </select>
             </label>
+            <label className="nmr-field">
+              <span>Look in</span>
+              <select className="form-input" value={source} onChange={(event) => setSource(event.target.value)}>
+                {SOURCE_CHOICES.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+              </select>
+            </label>
             <button type="submit" className="btn btn-primary nms-go" disabled={loading}>
               <Search size={15} /> {loading ? 'Searching…' : 'Search'}
             </button>
@@ -195,14 +210,23 @@ export default function NhisMedicineSearch({
                   <strong>{result.totals.patients}</strong> patient{result.totals.patients === 1 ? '' : 's'} ·{' '}
                   <strong>{result.totals.claims}</strong> claim{result.totals.claims === 1 ? '' : 's'} · GHS <strong>{money(result.totals.amount)}</strong>
                 </span>
-                <span>{formatSearchPeriod(searched.fromMonth, searched.toMonth)} · served, submitted and paid claims</span>
+                <span>
+                  {formatSearchPeriod(searched.fromMonth, searched.toMonth)} ·{' '}
+                  {searched.source === 'cash' ? 'completed cash sales' : searched.source === 'nhis' ? 'served, submitted and paid claims' : 'served, submitted and paid claims and completed cash sales'}
+                </span>
               </div>
+
+              {result.walkInLines > 0 && (
+                <p className="nmr-note nmr-note--warn" role="status">
+                  {result.walkInLines} cash sale line{result.walkInLines === 1 ? '' : 's'} with no patient recorded {result.walkInLines === 1 ? 'was' : 'were'} left out, because there is no patient to list.
+                </p>
+              )}
 
               <div className="nmr-table-wrap nms-summary-wrap">
                 <table className="nhis-table nmr-table">
                   <thead>
                     <tr>
-                      <th>Medicine searched</th><th className="nmr-num">Patients</th><th className="nmr-num">Claims</th>
+                      <th>Medicine searched</th><th className="nmr-num">Patients</th><th className="nmr-num">Claims / sales</th>
                       <th className="nmr-num">Quantity given</th><th className="nmr-num">Amount (GHS)</th>
                     </tr>
                   </thead>
@@ -227,8 +251,8 @@ export default function NhisMedicineSearch({
                   <table className="nhis-table nmr-table">
                     <thead>
                       <tr>
-                        <th>No.</th><th>Patient</th><th>Member no.</th><th>Medicines given</th>
-                        <th className="nmr-num">Claims</th><th>Last given</th><th className="nmr-num">Amount (GHS)</th>
+                        <th>No.</th><th>Patient</th><th>Member no.</th><th>Medicines given</th><th>Given via</th>
+                        <th className="nmr-num">Claims / sales</th><th>Last given</th><th className="nmr-num">Amount (GHS)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -238,6 +262,7 @@ export default function NhisMedicineSearch({
                           <td>{patientName(patient)}</td>
                           <td>{patient.memberNo || '-'}</td>
                           <td>{describePatientMedicines(patient)}</td>
+                          <td>{describeSources(patient.sources) || '-'}</td>
                           <td className="nmr-num">{patient.claimCount}</td>
                           <td>{formatReportDate(patient.lastDate) || '-'}</td>
                           <td className="nmr-num">{money(patient.amount)}</td>
