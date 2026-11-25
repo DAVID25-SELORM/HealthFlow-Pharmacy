@@ -21,7 +21,7 @@ vi.mock('./cashbookService', () => ({
 import { supabase } from '../lib/supabase'
 import { getUserBranchIdsByUserIds } from './branchService'
 import { recordCashbookMovementIfSessionOpen } from './cashbookService'
-import { getReceivables, recordClaimPayment } from './receivablesService'
+import { getNhisNotYetSubmittedSummary, getReceivables, getReceivablesSummary, recordClaimPayment } from './receivablesService'
 
 const makeQuery = (response) => {
   const query = {
@@ -30,6 +30,7 @@ const makeQuery = (response) => {
     gte: vi.fn(() => query),
     lte: vi.fn(() => query),
     order: vi.fn(() => query),
+    range: vi.fn(() => query),
     insert: vi.fn(() => query),
     update: vi.fn(() => query),
     single: vi.fn(() => Promise.resolve(response)),
@@ -111,6 +112,67 @@ describe('receivablesService NHIS accounting flow', () => {
         claimType: 'Hospital tariff + medicines',
       },
     })
+  })
+
+  const submitted = (id) => ({
+    id: `claim-${id}`, status: 'submitted', total_amount: 10, service_date_from: '2026-05-14', branch_id: 'branch-1',
+    nhis_claim_medicines: [], nhis_claim_services: [], nhis_claim_payments: [],
+  })
+  const served = (id, extra = {}) => ({ id: `served-${id}`, total_amount: 10.1, nhis_claim_payments: [], ...extra })
+  const thousand = (make) => Array.from({ length: 1000 }, (_, index) => make(index))
+
+  it('totals every submitted claim, not just the first 1,000', async () => {
+    queueTable('claims', makeQuery({ data: [], error: null }))
+    const first = queueTable('nhis_claims', makeQuery({ data: thousand(submitted), error: null }))
+    const second = queueTable('nhis_claims', makeQuery({ data: [submitted('last')], error: null }))
+
+    const summary = await getReceivablesSummary()
+
+    expect(first.range).toHaveBeenCalledWith(0, 999)
+    expect(second.range).toHaveBeenCalledWith(1000, 1999)
+    expect(summary.count).toBe(1001)
+    expect(summary.totalOutstanding).toBe(10010)
+    expect(summary.missing).toEqual([])
+  })
+
+  it('names a source that could not be loaded instead of totalling without saying so', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    queueTable('claims', makeQuery({ data: [], error: null }))
+    queueTable('nhis_claims', makeQuery({ data: thousand(submitted), error: null }))
+    queueTable('nhis_claims', makeQuery({ data: null, error: new Error('timed out') }))
+
+    const summary = await getReceivablesSummary()
+
+    expect(summary.missing).toEqual(['NHIS claims'])
+    expect(summary.count).toBe(0)
+  })
+
+  it('totals served claims that are not yet submitted across every page, less anything paid', async () => {
+    const first = queueTable('nhis_claims', makeQuery({ data: thousand((index) => served(index)), error: null }))
+    queueTable('nhis_claims', makeQuery({
+      data: [served('part-paid', { total_amount: 50, nhis_claim_payments: [{ paid_amount: 20 }] }), served('overpaid', { total_amount: 5, nhis_claim_payments: [{ paid_amount: 9 }] })],
+      error: null,
+    }))
+
+    const summary = await getNhisNotYetSubmittedSummary()
+
+    expect(first.eq).toHaveBeenCalledWith('status', 'served')
+    expect(first.eq).toHaveBeenCalledTimes(1)
+    expect(summary).toEqual({ total: 10130, count: 1002 })
+  })
+
+  it('limits the not-yet-submitted figure to the chosen branch', async () => {
+    const query = queueTable('nhis_claims', makeQuery({ data: [], error: null }))
+
+    expect(await getNhisNotYetSubmittedSummary('branch-2')).toEqual({ total: 0, count: 0 })
+    expect(query.eq).toHaveBeenCalledWith('branch_id', 'branch-2')
+  })
+
+  it('fails the not-yet-submitted figure outright if any page fails', async () => {
+    queueTable('nhis_claims', makeQuery({ data: thousand((index) => served(index)), error: null }))
+    queueTable('nhis_claims', makeQuery({ data: null, error: new Error('timed out') }))
+
+    await expect(getNhisNotYetSubmittedSummary()).rejects.toThrow('timed out')
   })
 
   it('records a full NHIS cash payment, marks the claim paid, and syncs cashbook', async () => {

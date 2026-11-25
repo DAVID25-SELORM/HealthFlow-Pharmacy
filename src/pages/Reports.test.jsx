@@ -237,6 +237,65 @@ describe('Reports', () => {
     })
   })
 
+  describe('honest figures', () => {
+    const complete = { ...reportBundle, pagination: { nhisClaims: { offset: 0, limit: 200, total: reportBundle.nhisClaims.length, hasMore: false } } }
+    const generate = () => fireEvent.click(screen.getByRole('button', { name: /generate reports/i }))
+    const summaryCard = (container, label) =>
+      within(container.querySelector('.reports-summary-grid')).getByText(label).closest('.report-summary-card')
+
+    it('shows a dash, not zero, until the reports are generated', async () => {
+      const { container } = render(<Reports />)
+      for (const label of ['Sales', 'Inventory', 'NHIS Claims', 'Purchases']) {
+        expect(summaryCard(container, label)).toHaveTextContent('—')
+        expect(summaryCard(container, label)).toHaveTextContent('Click Generate Reports')
+        expect(summaryCard(container, label)).not.toHaveTextContent('0')
+      }
+      expect(screen.getByText('Patients served').parentElement).toHaveTextContent('—')
+      generate()
+      await waitFor(() => expect(summaryCard(container, 'Sales')).toHaveTextContent('transactions'))
+      expect(summaryCard(container, 'Sales')).not.toHaveTextContent('—')
+    }, 15000)
+
+    it('does not offer filters that change nothing', () => {
+      const { container } = render(<Reports />)
+      const labels = [...container.querySelectorAll('.reports-filter-panel label > span')].map((node) => node.textContent)
+      for (const hidden of ['Branch', 'Facility', 'Payment type', 'Insurance provider', 'NHIS status', 'Claim status']) {
+        expect(labels).not.toContain(hidden)
+      }
+      expect(labels).toEqual(expect.arrayContaining(['Period', 'Date range', 'Facility branch', 'Drug', 'Patient type', 'Patient']))
+    })
+
+    it('says on screen and in the export when only part of the NHIS claims is loaded', async () => {
+      const { downloadCsv } = await import('../services/reportsService')
+      mocks.getReportBundle.mockResolvedValue({ ...reportBundle, pagination: { nhisClaims: { offset: 0, limit: 200, total: 1234, hasMore: true } } })
+      const { container } = render(<Reports />)
+      generate()
+      const warning = await screen.findByText(/Some figures on this page are incomplete/)
+      expect(warning.closest('.reports-incomplete')).toHaveTextContent(`Only ${reportBundle.nhisClaims.length} of 1,234 NHIS claims are loaded`)
+      // a till-sales report is not affected, so neither it nor its export carries the warning
+      expect(container.querySelector('.reports-incomplete--table')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: /export all csv/i }))
+      expect(JSON.stringify(downloadCsv.mock.calls.at(-1)[3])).not.toContain('INCOMPLETE')
+
+      fireEvent.click(screen.getByRole('tab', { name: /nhis/i }))
+      await waitFor(() => expect(container.querySelector('.reports-incomplete--table')).not.toBeNull())
+      expect(container.querySelector('.report-table-card')).toHaveTextContent('(loaded claims only)')
+      fireEvent.click(screen.getByRole('button', { name: /export all csv/i }))
+      expect(JSON.stringify(downloadCsv.mock.calls.at(-1)[3])).toContain(`WARNING, INCOMPLETE: Only ${reportBundle.nhisClaims.length} of 1,234`)
+    }, 20000)
+
+    it('shows no warning when everything is loaded', async () => {
+      mocks.getReportBundle.mockResolvedValue(complete)
+      const { container } = render(<Reports />)
+      generate()
+      await waitFor(() => expect(summaryCard(container, 'Sales')).toHaveTextContent('transactions'))
+      expect(screen.queryByText(/figures on this page are incomplete/)).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('tab', { name: /nhis/i }))
+      expect(container.querySelector('.reports-incomplete')).toBeNull()
+      expect(container.querySelector('.report-table-card')).not.toHaveTextContent('(loaded claims only)')
+    }, 15000)
+  })
+
   it('generates report cards and filters the selected report rows by visible values', async () => {
     const { container } = render(<Reports />)
 

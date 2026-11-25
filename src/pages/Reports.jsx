@@ -35,6 +35,7 @@ import {
 import { logPerformance } from '../utils/performance'
 import { getErrorMessage } from '../utils/requestErrors'
 import UpgradeGate from '../components/UpgradeGate'
+import { describePartials, getReportPartials, getReportWarnings } from '../utils/reportCompleteness'
 import './Reports.css'
 import '../styles/dashboardDesign.css'
 
@@ -68,6 +69,7 @@ const FILTER_DEFAULTS = {
   nhisClaimLimit: 200,
 }
 
+const NOT_LOADED = '\u2014'
 const money = (value) => `GHS ${Number(value || 0).toFixed(2)}`
 const text = (value, fallback = '-') => value || fallback
 const rowsOf = (value) => (Array.isArray(value) ? value : [])
@@ -518,6 +520,25 @@ const includesTerm = (row, term) =>
     String(value || '').toLowerCase().includes(String(term || '').toLowerCase())
   )
 
+// The server counts and adds up every claim in the period, even when only one batch is loaded.
+const getNhisTotalValue = (bundle, loadedClaims) => {
+  const serverTotal = bundle.metrics?.nhisClaimsAmount
+  return serverTotal === undefined || serverTotal === null
+    ? loadedClaims.reduce((sum, claim) => sum + getClaimAmount(claim), 0)
+    : numberValue(serverTotal)
+}
+
+// While only part of the claims is loaded, a status count must come from the same claims as the amount beside it.
+const loadedOr = (bundle, metric, loadedClaims, statuses) =>
+  getReportPartials(bundle).nhis
+    ? loadedClaims.filter((claim) => statuses.includes(normalizeStatus(getStatus(claim)))).length
+    : bundle.metrics[metric]
+
+const markLoadedOnly = (bundle, rows) =>
+  getReportPartials(bundle).nhis
+    ? rows.map((row, index) => (index === 0 ? row : [`${row[0]} (loaded claims only)`, ...row.slice(1)]))
+    : rows
+
 const getReportRows = (reportId, bundle, filters = {}) => {
   const nhisClaims = rowsOf(bundle.nhisClaims)
   const generalClaims = rowsOf(bundle.claims)
@@ -744,18 +765,18 @@ const getReportRows = (reportId, bundle, filters = {}) => {
     },
     'nhis-summary': {
       headers: ['Metric', 'Count', 'Amount'],
-      rows: [
-        ['Total NHIS claims', bundle.metrics.nhisClaimsCount || nhisClaims.length, money(nhisClaims.reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
-        ['Pending claims', bundle.metrics.pendingNhisClaims, money(nhisClaims.filter((claim) => ['draft', 'ready', 'pending', 'failed'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
-        ['Submitted claims', bundle.metrics.submittedNhisClaims, money(nhisClaims.filter((claim) => ['submitted', 'accepted', 'approved', 'paid', 'rejected'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
-        ['Approved/paid claims', bundle.metrics.approvedNhisClaims, money(nhisClaims.filter((claim) => ['accepted', 'approved', 'paid'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
-        ['Rejected/failed claims', bundle.metrics.rejectedNhisClaims, money(nhisClaims.filter((claim) => ['rejected', 'failed'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
+      rows: markLoadedOnly(bundle, [
+        ['Total NHIS claims', bundle.metrics.nhisClaimsCount || nhisClaims.length, money(getNhisTotalValue(bundle, nhisClaims))],
+        ['Pending claims', loadedOr(bundle, 'pendingNhisClaims', nhisClaims, ['draft', 'ready', 'pending', 'failed']), money(nhisClaims.filter((claim) => ['draft', 'ready', 'pending', 'failed'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
+        ['Submitted claims', loadedOr(bundle, 'submittedNhisClaims', nhisClaims, ['submitted', 'accepted', 'approved', 'paid', 'rejected']), money(nhisClaims.filter((claim) => ['submitted', 'accepted', 'approved', 'paid', 'rejected'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
+        ['Approved/paid claims', loadedOr(bundle, 'approvedNhisClaims', nhisClaims, ['accepted', 'approved', 'paid']), money(nhisClaims.filter((claim) => ['accepted', 'approved', 'paid'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
+        ['Rejected/failed claims', loadedOr(bundle, 'rejectedNhisClaims', nhisClaims, ['rejected', 'failed']), money(nhisClaims.filter((claim) => ['rejected', 'failed'].includes(normalizeStatus(getStatus(claim)))).reduce((sum, claim) => sum + getClaimAmount(claim), 0))],
         ['Unique NHIS members', uniqueCount(nhisClaims.map((claim) => claim.member_number || claim.memberNumber || claim.nhis_member_no || claim.nhisMemberNo)), ''],
         ['Medicine lines', getNhisMedicineLines(nhisClaims).length, money(getNhisMedicineLines(nhisClaims).reduce((sum, line) => sum + numberValue(line.totalPrice), 0))],
         ['GDRG/service lines', getGdrgServiceLines(nhisClaims).length, money(getGdrgServiceLines(nhisClaims).reduce((sum, line) => sum + numberValue(line.totalAmount), 0))],
         ...buildBreakdownRows('Status', nhisClaims, (claim) => getStatus(claim), getClaimAmount),
         ...buildBreakdownRows('Insurance provider', nhisClaims, (claim) => claim.insurance_provider || claim.insuranceProvider || 'NHIS', getClaimAmount),
-      ],
+      ]),
     },
     'submitted-claims': {
       headers: ['Claim No.', 'Patient', 'Member No.', 'Provider', 'Status', 'Amount', 'Service Date', 'Submitted/Updated', 'Branch', 'Officer', 'Notes/Error'],
@@ -1020,8 +1041,8 @@ const getReportSummaryRows = (reportId, bundle, visibleRows = []) => {
       [`Insurance providers: ${uniqueCount(rowsOf(bundle.patients).map((patient) => patient.insurance_provider || patient.insuranceProvider))}`],
     ],
     'nhis-summary': [
-      [`NHIS claims: ${nhisClaims.length}`],
-      [`NHIS claim value: ${money(totalNhisAmount)}`],
+      [`NHIS claims: ${bundle.metrics.nhisClaimsCount || nhisClaims.length}`],
+      [`NHIS claim value: ${money(getNhisTotalValue(bundle, nhisClaims))}`],
       [`Approved/paid: ${bundle.metrics.approvedNhisClaims || 0}`],
       [`Rejected/failed: ${bundle.metrics.rejectedNhisClaims || 0}`],
     ],
@@ -1040,7 +1061,7 @@ const getReportSummaryRows = (reportId, bundle, visibleRows = []) => {
     ],
     'monthly-nhis-submission': [
       [`Months: ${rowsOf(bundle.monthlyNhisSubmission).length}`],
-      [`Claims submitted in period: ${rowsOf(bundle.monthlyNhisSubmission).reduce((sum, month) => sum + numberValue(month.count), 0)}`],
+      [`Claims in period: ${rowsOf(bundle.monthlyNhisSubmission).reduce((sum, month) => sum + numberValue(month.count), 0)}`],
       [`Submission value: ${money(rowsOf(bundle.monthlyNhisSubmission).reduce((sum, month) => sum + numberValue(month.totalAmount), 0))}`],
     ],
     'nhia-reconciliation': [
@@ -1124,12 +1145,16 @@ const Reports = () => {
     return reports.filter((report) => includesTerm([report.title, report.description], searchTerm))
   }, [activeTab, reportCatalog, searchTerm])
 
+  const partials = useMemo(() => getReportPartials(normalizedBundle), [normalizedBundle])
+  const partialMessages = describePartials(partials)
+  const cardDetail = (isPartial, detail) => (isPartial ? `${detail} - may be incomplete` : detail)
   const summaryCards = [
-    { label: 'Sales', value: money(normalizedBundle.metrics.salesAmount), detail: `${normalizedBundle.metrics.salesCount} transactions` },
-    { label: 'Inventory', value: normalizedBundle.metrics.inventoryCount, detail: `${normalizedBundle.metrics.lowStockCount} low stock` },
+    { label: 'Sales', value: money(normalizedBundle.metrics.salesAmount), detail: cardDetail(partials.sales, `${normalizedBundle.metrics.salesCount} transactions`) },
+    { label: 'Inventory', value: normalizedBundle.metrics.inventoryCount, detail: cardDetail(partials.drugs, `${normalizedBundle.metrics.lowStockCount} low stock`) },
     { label: 'NHIS Claims', value: normalizedBundle.metrics.nhisClaimsCount || normalizedBundle.metrics.claimsCount, detail: `${normalizedBundle.metrics.rejectedNhisClaims || 0} rejected/failed` },
-    { label: 'Purchases', value: money(normalizedBundle.metrics.purchaseAmount), detail: `${normalizedBundle.metrics.purchasesCount} purchase records` },
-  ]
+    { label: 'Purchases', value: money(normalizedBundle.metrics.purchaseAmount), detail: cardDetail(partials.purchases, `${normalizedBundle.metrics.purchasesCount} purchase records`) },
+  ].map((card) => (hasGeneratedReports ? card : { ...card, value: NOT_LOADED, detail: 'Click Generate Reports' }))
+  const drugStat = (value) => (hasGeneratedReports ? value : NOT_LOADED)
   const dispensingLines = useMemo(
     () => filterDispensingLines(getDispensingLines(normalizedBundle), analyticsFilters),
     [normalizedBundle, analyticsFilters]
@@ -1424,6 +1449,7 @@ const Reports = () => {
       generatedBy: displayName,
       branchName: branch?.name,
     }),
+    ...getReportWarnings(reportId, partials).map((warning) => [`WARNING, INCOMPLETE: ${warning}`]),
     ...getReportSummaryRows(reportId, normalizedBundle, rows),
     [],
     ...(reportFooter ? [[reportFooter]] : []),
@@ -1497,17 +1523,13 @@ const Reports = () => {
               <option value="custom">Custom</option>
             </select>
           </label>
-          <label>
+          <label className="reports-date-field">
             <span>Date range</span>
             <div className="reports-date-pair">
               <Calendar size={16} />
               <input type="date" value={filters.startDate} onChange={(event) => updateFilter('startDate', event.target.value)} />
               <input type="date" value={filters.endDate} onChange={(event) => updateFilter('endDate', event.target.value)} />
             </div>
-          </label>
-          <label>
-            <span>Branch</span>
-            <input value={filters.branch} onChange={(event) => updateFilter('branch', event.target.value)} placeholder="All branches" />
           </label>
           <label>
             <span>Facility branch</span>
@@ -1531,10 +1553,6 @@ const Reports = () => {
             <input value={filters.patient} onChange={(event) => updateFilter('patient', event.target.value)} placeholder="Name, folder or member number" />
           </label>
           <label>
-            <span>Facility</span>
-            <input value={filters.facility} onChange={(event) => updateFilter('facility', event.target.value)} placeholder="Current facility" />
-          </label>
-          <label>
             <span>Department/module</span>
             <input value={filters.department} onChange={(event) => updateFilter('department', event.target.value)} placeholder="All modules" />
           </label>
@@ -1551,42 +1569,25 @@ const Reports = () => {
             <input value={filters.servedBy} onChange={(event) => updateFilter('servedBy', event.target.value)} placeholder="Dispensing staff name or ID" />
           </label>
           <label>
-            <span>Payment type</span>
-            <select value={filters.paymentType} onChange={(event) => updateFilter('paymentType', event.target.value)}>
-              <option value="">All</option>
-              <option value="cash">Cash</option>
-              <option value="momo">Mobile money</option>
-              <option value="card">Card</option>
-              <option value="insurance">Private insurance</option>
-              <option value="nhia">NHIA claim</option>
-            </select>
-          </label>
-          <label>
-            <span>Insurance provider</span>
-            <input value={filters.insuranceProvider} onChange={(event) => updateFilter('insuranceProvider', event.target.value)} placeholder="NHIS, private..." />
-          </label>
-          <label>
-            <span>NHIS status</span>
-            <select value={filters.nhisStatus} onChange={(event) => updateFilter('nhisStatus', event.target.value)}>
-              <option value="">All</option>
-              <option value="draft">Draft</option>
-              <option value="ready">Ready</option>
-              <option value="submitted">Submitted</option>
-              <option value="accepted">Accepted</option>
-              <option value="paid">Paid</option>
-              <option value="rejected">Rejected</option>
-              <option value="failed">Failed</option>
-            </select>
-          </label>
-          <label>
-            <span>Claim status</span>
-            <input value={filters.claimStatus} onChange={(event) => updateFilter('claimStatus', event.target.value)} placeholder="pending, approved..." />
-          </label>
-          <label>
             <span>Drug/service category</span>
             <input value={filters.drugCategory} onChange={(event) => updateFilter('drugCategory', event.target.value)} placeholder="Category or GDRG" />
           </label>
         </div>
+
+        {hasGeneratedReports && partialMessages.length > 0 && (
+          <div className="reports-incomplete" role="status">
+            <strong>Some figures on this page are incomplete.</strong>
+            <ul>
+              {partialMessages.map((message) => <li key={message}>{message}</li>)}
+            </ul>
+            {partials.nhis && (
+              <p>
+                On the NHIS tab, <b>Load more</b> adds more claims. For every patient given particular medicines, use
+                {' '}<b>NHIS, then Claims, then Medicine search</b>.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="reports-summary-grid">
           {summaryCards.map((card) => (
@@ -1633,19 +1634,19 @@ const Reports = () => {
             <div className="drug-fast-stats">
               <div>
                 <span>Patients served</span>
-                <strong>{fastSearchResult?.patientsServed || 0}</strong>
+                <strong>{drugStat(fastSearchResult?.patientsServed || 0)}</strong>
               </div>
               <div>
                 <span>Quantity dispensed</span>
-                <strong>{fastSearchResult ? `${fastSearchResult.quantity} ${fastSearchResult.unit || ''}`.trim() : 0}</strong>
+                <strong>{drugStat(fastSearchResult ? `${fastSearchResult.quantity} ${fastSearchResult.unit || ''}`.trim() : 0)}</strong>
               </div>
               <div>
                 <span>Revenue</span>
-                <strong>{money(fastSearchResult?.revenue)}</strong>
+                <strong>{drugStat(money(fastSearchResult?.revenue))}</strong>
               </div>
               <div>
                 <span>NHIS value</span>
-                <strong>{money(fastSearchResult?.nhisValue)}</strong>
+                <strong>{drugStat(money(fastSearchResult?.nhisValue))}</strong>
               </div>
               <div>
                 <span>Last dispensed</span>
@@ -1872,6 +1873,12 @@ const Reports = () => {
               )}
             </div>
           </div>
+
+          {hasGeneratedReports && getReportWarnings(selectedReport?.id, partials).length > 0 && (
+            <div className="reports-incomplete reports-incomplete--table">
+              <strong>This report and its exports are incomplete.</strong> {getReportWarnings(selectedReport?.id, partials).join(' ')}
+            </div>
+          )}
 
           {reportData.rows.length === 0 ? (
             <div className="report-empty-state">

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getExpenseCategories: vi.fn(),
   getExpenses: vi.fn(),
   getReceivables: vi.fn(),
+  getNhisNotYetSubmittedSummary: vi.fn(),
   getReceivablesSummary: vi.fn(),
   getShifts: vi.fn(),
   getTodaySession: vi.fn(),
@@ -58,6 +59,7 @@ vi.mock('../services/cashbookService', () => ({
 
 vi.mock('../services/receivablesService', () => ({
   getReceivables: mocks.getReceivables,
+  getNhisNotYetSubmittedSummary: mocks.getNhisNotYetSubmittedSummary,
   recordClaimPayment: mocks.recordClaimPayment,
   getReceivablesSummary: mocks.getReceivablesSummary,
 }))
@@ -103,8 +105,72 @@ describe('Accounting', () => {
       JSON.stringify('receivables')
     )
     expect(
-      screen.getByText(/no outstanding receivables\. all approved claims are fully paid/i)
+      screen.getByText(/no submitted or approved claims are waiting for payment/i)
     ).toBeInTheDocument()
+  })
+
+  const overview = (receivables = {}) => ({
+    sales: { revenue: 0, cogs: 0, byMethod: {}, count: 0 },
+    expenses: { totalExpenses: 0, byCategory: {} },
+    receivables: { totalOutstanding: 500, count: 3, byInsurer: [], byAgeBucket: {}, missing: [], ...receivables },
+    cashbook: { totalVariance: 0, shortages: 0 },
+    grossProfit: 0,
+    grossMarginPct: 0,
+    netOperatingProfit: 0,
+    warnings: [],
+  })
+
+  const renderOverview = () => {
+    mocks.isSupabaseConfigured.mockReturnValue(true)
+    mocks.getBranches.mockResolvedValue([])
+    render(
+      <MemoryRouter>
+        <Accounting />
+      </MemoryRouter>
+    )
+  }
+
+  const card = (label) => screen.getByText(label).closest('.acc-kpi')
+
+  it('shows served but unsubmitted claims apart from the money owed', async () => {
+    mocks.getAccountingOverview.mockResolvedValue(overview())
+    mocks.getNhisNotYetSubmittedSummary.mockResolvedValue({ total: 9000, count: 42 })
+    renderOverview()
+
+    await screen.findByText(/42 served claims not marked submitted/)
+    expect(card('NHIS Not Yet Submitted')).toHaveTextContent('9,000.00')
+    expect(card('NHIS Not Yet Submitted')).toHaveTextContent('Not counted as receivables')
+    expect(card('Outstanding Receivables')).toHaveTextContent('500.00')
+    expect(card('Outstanding Receivables')).not.toHaveTextContent('9,500.00')
+    expect(card('Till Sales Revenue')).toHaveTextContent('NHIS claims are not included')
+  })
+
+  it('shows a dash, not zero, when the not-yet-submitted figure cannot be loaded', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.getAccountingOverview.mockResolvedValue(overview())
+    mocks.getNhisNotYetSubmittedSummary.mockRejectedValue(new Error('timed out'))
+    renderOverview()
+
+    await screen.findByText(/Could not be loaded\. Press Generate to try again/)
+    expect(card('NHIS Not Yet Submitted')).toHaveTextContent('—')
+    expect(card('NHIS Not Yet Submitted')).not.toHaveTextContent('0.00')
+  })
+
+  it('does not hold up the other figures while the served claims are being added up', async () => {
+    mocks.getAccountingOverview.mockResolvedValue(overview())
+    mocks.getNhisNotYetSubmittedSummary.mockReturnValue(new Promise(() => {}))
+    renderOverview()
+
+    expect(await screen.findByText('Outstanding Receivables')).toBeInTheDocument()
+    expect(card('NHIS Not Yet Submitted')).toHaveTextContent('Adding up served claims')
+  })
+
+  it('says when part of the receivables could not be loaded', async () => {
+    mocks.getAccountingOverview.mockResolvedValue(overview({ missing: ['NHIS claims'] }))
+    mocks.getNhisNotYetSubmittedSummary.mockResolvedValue({ total: 0, count: 0 })
+    renderOverview()
+
+    expect(await screen.findByText('Incomplete: NHIS claims could not be loaded.')).toBeInTheDocument()
   })
 
   it('requires a branch before recording an expense', () => {

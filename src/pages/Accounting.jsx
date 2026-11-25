@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   DollarSign, TrendingDown, RefreshCcw,
@@ -20,7 +20,7 @@ import {
 } from '../services/cashbookService'
 import { getShifts } from '../services/shiftService'
 import {
-  getReceivables, recordClaimPayment, getReceivablesSummary,
+  getReceivables, recordClaimPayment, getReceivablesSummary, getNhisNotYetSubmittedSummary,
 } from '../services/receivablesService'
 import { getAccountingOverview } from '../services/accountingService'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
@@ -62,6 +62,9 @@ const formatNhisBreakdown = (receivable) => {
   return parts.length ? parts.join(' | ') : 'No NHIS line breakdown'
 }
 // ✅ NHIS ACCOUNTING BREAKDOWN PATCH END
+
+// How many receivables are drawn at a time; the totals, search and export always cover all of them.
+const RECEIVABLES_STEP = 200
 
 const TABS = [
   { key: 'overview',     label: 'Overview',    icon: DollarSign   },
@@ -156,6 +159,10 @@ const Accounting = () => {
   const [paymentForm, setPaymentForm]       = useState(blankPaymentForm)
   const [savingPayment, setSavingPayment]   = useState(false)
   const [receivablesSearchTerm, setReceivablesSearchTerm] = useState('')
+  const [receivablesShown, setReceivablesShown] = useState(RECEIVABLES_STEP)
+  // Loaded on its own: it can run to many thousands of claims and must not hold up the rest of the overview.
+  const [notSubmitted, setNotSubmitted] = useState({ status: 'loading', total: 0, count: 0 })
+  const notSubmittedToken = useRef(0)
 
   // â”€â”€ load functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -166,6 +173,25 @@ const Accounting = () => {
       setBranches(data)
     } catch { /* silent */ }
   }, [])
+
+  const loadNotSubmitted = useCallback(async () => {
+    if (!isSupabaseConfigured()) return
+    const token = notSubmittedToken.current + 1
+    notSubmittedToken.current = token
+    setNotSubmitted({ status: 'loading', total: 0, count: 0 })
+    try {
+      const summary = await getNhisNotYetSubmittedSummary(branchFilter !== 'all' ? branchFilter : null)
+      if (token === notSubmittedToken.current) setNotSubmitted({ status: 'ready', ...summary })
+    } catch (loadError) {
+      console.warn('Unable to total NHIS claims not yet submitted:', loadError)
+      if (token === notSubmittedToken.current) setNotSubmitted({ status: 'failed', total: 0, count: 0 })
+    }
+  }, [branchFilter])
+
+  // It depends on the branch only, not on the dates.
+  useEffect(() => {
+    if (activeTab === 'overview') void loadNotSubmitted()
+  }, [activeTab, loadNotSubmitted])
 
   const loadOverview = useCallback(async () => {
     if (!isSupabaseConfigured()) return
@@ -287,7 +313,7 @@ const Accounting = () => {
   }, [activeTab, loadOverview, loadExpenses, loadCashbook, loadShifts, loadReceivables])
 
   const refresh = () => {
-    if (activeTab === 'overview')    void loadOverview()
+    if (activeTab === 'overview')    { void loadOverview(); void loadNotSubmitted() }
     if (activeTab === 'expenses')    void loadExpenses()
     if (activeTab === 'cashbook')    void loadCashbook()
     if (activeTab === 'shifts')      void loadShifts()
@@ -547,9 +573,9 @@ const Accounting = () => {
         <>
           <div className="acc-kpi-grid">
             <div className="acc-kpi primary">
-              <span className="acc-kpi-label">Revenue</span>
+              <span className="acc-kpi-label">Till Sales Revenue</span>
               <span className="acc-kpi-value">{fmt(overview.sales.revenue)}</span>
-              <span className="acc-kpi-sub">{overview.sales.count} transactions</span>
+              <span className="acc-kpi-sub">{overview.sales.count} completed till sales. NHIS claims are not included.</span>
             </div>
             <div className="acc-kpi danger">
               <span className="acc-kpi-label">Total Expenses</span>
@@ -558,16 +584,29 @@ const Accounting = () => {
             <div className={`acc-kpi ${overview.grossProfit >= 0 ? 'success' : 'danger'}`}>
               <span className="acc-kpi-label">Gross Profit</span>
               <span className="acc-kpi-value">{fmt(overview.grossProfit)}</span>
-              <span className="acc-kpi-sub">{overview.grossMarginPct.toFixed(1)}% margin</span>
+              <span className="acc-kpi-sub">{overview.grossMarginPct.toFixed(1)}% margin on till sales</span>
             </div>
             <div className={`acc-kpi ${overview.netOperatingProfit >= 0 ? 'success' : 'danger'}`}>
               <span className="acc-kpi-label">Net Operating Profit</span>
               <span className="acc-kpi-value">{fmt(overview.netOperatingProfit)}</span>
+              <span className="acc-kpi-sub">Till sales profit less expenses</span>
             </div>
             <div className="acc-kpi warning">
               <span className="acc-kpi-label">Outstanding Receivables</span>
               <span className="acc-kpi-value">{fmt(overview.receivables.totalOutstanding)}</span>
-              <span className="acc-kpi-sub">{overview.receivables.count} unpaid claims</span>
+              <span className="acc-kpi-sub">{overview.receivables.count} submitted or approved claims not yet paid, all dates</span>
+              {overview.receivables.missing?.length > 0 && (
+                <span className="acc-kpi-sub acc-kpi-incomplete">Incomplete: {overview.receivables.missing.join(' and ')} could not be loaded.</span>
+              )}
+            </div>
+            <div className="acc-kpi info">
+              <span className="acc-kpi-label">NHIS Not Yet Submitted</span>
+              <span className="acc-kpi-value">{notSubmitted.status === 'ready' ? fmt(notSubmitted.total) : '\u2014'}</span>
+              <span className="acc-kpi-sub">
+                {notSubmitted.status === 'ready' && `${notSubmitted.count} served claims not marked submitted, all dates. Not counted as receivables.`}
+                {notSubmitted.status === 'loading' && 'Adding up served claims\u2026'}
+                {notSubmitted.status === 'failed' && 'Could not be loaded. Press Generate to try again.'}
+              </span>
             </div>
             <div className={`acc-kpi ${overview.cashbook.totalVariance < 0 ? 'danger' : 'info'}`}>
               <span className="acc-kpi-label">Cash Variance (period)</span>
@@ -976,7 +1015,10 @@ const Accounting = () => {
           <div className="acc-kpi warning">
             <span className="acc-kpi-label">Outstanding</span>
             <span className="acc-kpi-value">{fmt(receivablesSummary.totalOutstanding)}</span>
-            <span className="acc-kpi-sub">{receivablesSummary.count} claims</span>
+            <span className="acc-kpi-sub">{receivablesSummary.count} claims, all dates</span>
+            {receivablesSummary.missing?.length > 0 && (
+              <span className="acc-kpi-sub acc-kpi-incomplete">Incomplete: {receivablesSummary.missing.join(' and ')} could not be loaded.</span>
+            )}
           </div>
           <div className="acc-kpi success">
             <span className="acc-kpi-label">Total Paid</span>
@@ -1009,12 +1051,12 @@ const Accounting = () => {
           type="search"
           placeholder="Search receivables by patient, phone, insurer, claim no., or insurance no."
           value={receivablesSearchTerm}
-          onChange={(event) => setReceivablesSearchTerm(event.target.value)}
+          onChange={(event) => { setReceivablesSearchTerm(event.target.value); setReceivablesShown(RECEIVABLES_STEP) }}
         />
       </label>
 
       {filteredReceivables.length === 0 && !loading && (
-        <p className="acc-empty">No outstanding receivables. All approved claims are fully paid.</p>
+        <p className="acc-empty">No submitted or approved claims are waiting for payment.</p>
       )}
 
       {filteredReceivables.length > 0 && (
@@ -1034,7 +1076,7 @@ const Accounting = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredReceivables.map((r) => (
+              {filteredReceivables.slice(0, receivablesShown).map((r) => (
                 <tr key={r.id}>
                   <td><code>{r.claim_number}</code></td>
                   <td>{r.patient_name}</td>
@@ -1073,6 +1115,15 @@ const Accounting = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {filteredReceivables.length > receivablesShown && (
+        <div className="acc-show-more">
+          <span>Showing {receivablesShown} of {filteredReceivables.length}. Search looks through all of them.</span>
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => setReceivablesShown((shown) => shown + RECEIVABLES_STEP)}>
+            Show more
+          </button>
         </div>
       )}
 

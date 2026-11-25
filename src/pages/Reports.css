@@ -75,14 +75,50 @@
 }
 
 .reports-date-pair {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
 }
 
 .reports-date-pair svg {
+  flex: 0 0 auto;
   color: var(--primary);
+}
+
+/* A date needs about 9rem to show in full; when two do not fit side by side they wrap instead of being cut off. */
+.reports-filter-panel .reports-date-pair input {
+  flex: 1 1 9rem;
+  width: auto;
+}
+
+@media (min-width: 900px) {
+  .reports-filter-panel .reports-date-field {
+    grid-column: span 2;
+  }
+}
+
+.reports-incomplete {
+  margin: 0 0 1rem;
+  border: 1px solid #f3c969;
+  background: #fff8e6;
+  color: #7a5200;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+}
+
+.reports-incomplete ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.reports-incomplete p {
+  margin: 0.4rem 0 0;
+}
+
+.reports-incomplete--table {
+  margin-bottom: 0.75rem;
 }
 
 .reports-summary-grid {

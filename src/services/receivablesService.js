@@ -7,6 +7,21 @@ import { recordCashbookMovementIfSessionOpen } from './cashbookService'
 
 const AGE_BUCKETS = ['0-30', '31-60', '61-90', '90+']
 
+const PAGE_SIZE = 1000
+const MAX_PAGES = 200
+
+// The cloud returns at most 1,000 rows per request, so every list that feeds a total is read page by page.
+const fetchAllPages = async (buildQuery) => {
+  const rows = []
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const { data, error } = await buildQuery().range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+    if (error) throw error
+    rows.push(...(data || []))
+    if (!data || data.length < PAGE_SIZE) return rows
+  }
+  throw new Error('There are too many claims to total here.')
+}
+
 const getAgeBucket = (ageDays) => {
   if (ageDays <= 30) return '0-30'
   if (ageDays <= 60) return '31-60'
@@ -238,7 +253,7 @@ export const getClaimPayments = async (filters = {}) => {
 }
 
 const getGeneralReceivables = async (branchId = null) => {
-  const { data, error } = await supabase
+  const data = await fetchAllPages(() => supabase
     .from('claims')
     .select(`
       id,
@@ -257,15 +272,16 @@ const getGeneralReceivables = async (branchId = null) => {
     `)
     .eq('claim_status', 'approved')
     .order('service_date', { ascending: true })
+    .order('id', { ascending: true }))
 
-  if (error) throw error
-  return buildGeneralReceivablesRows(data || [], branchId)
+  return buildGeneralReceivablesRows(data, branchId)
 }
 
 const getNhisReceivables = async (branchId = null) => {
-  let query = supabase
-    .from('nhis_claims')
-    .select(`
+  const buildQuery = () => {
+    let query = supabase
+      .from('nhis_claims')
+      .select(`
       id,
       branch_id,
       claim_number,
@@ -282,30 +298,66 @@ const getNhisReceivables = async (branchId = null) => {
       created_at,
       nhis_claim_payments (id, paid_amount, payment_date)
     `)
-    .eq('status', 'submitted')
-    .order('service_date_from', { ascending: true, nullsFirst: false })
+      .eq('status', 'submitted')
+      .order('service_date_from', { ascending: true, nullsFirst: false })
+      .order('id', { ascending: true })
 
-  if (branchId) query = query.eq('branch_id', branchId)
+    if (branchId) query = query.eq('branch_id', branchId)
+    return query
+  }
 
-  const { data, error } = await query
-  if (error) throw error
-  return buildNhisReceivablesRows(data || [], branchId)
+  const data = await fetchAllPages(buildQuery)
+  return buildNhisReceivablesRows(data, branchId)
 }
 
-export const getReceivables = async (branchId = null) => {
+// `missing` names any source that failed, so a total is never shown as complete without it.
+const loadReceivables = async (branchId = null) => {
   const [generalResult, nhisResult] = await Promise.allSettled([
     getGeneralReceivables(branchId),
     getNhisReceivables(branchId),
   ])
 
   const receivables = []
+  const missing = []
   if (generalResult.status === 'fulfilled') receivables.push(...generalResult.value)
-  else console.warn('Unable to load insurance receivables:', generalResult.reason)
+  else {
+    missing.push('insurance claims')
+    console.warn('Unable to load insurance receivables:', generalResult.reason)
+  }
 
   if (nhisResult.status === 'fulfilled') receivables.push(...nhisResult.value)
-  else console.warn('Unable to load NHIS receivables:', nhisResult.reason)
+  else {
+    missing.push('NHIS claims')
+    console.warn('Unable to load NHIS receivables:', nhisResult.reason)
+  }
 
-  return receivables.sort((a, b) => new Date(a.service_date) - new Date(b.service_date))
+  return { rows: receivables.sort((a, b) => new Date(a.service_date) - new Date(b.service_date)), missing }
+}
+
+export const getReceivables = async (branchId = null) => (await loadReceivables(branchId)).rows
+
+/**
+ * NHIS claims that have been served but not marked submitted. They are not receivables yet, so they are
+ * totalled on their own and never added to the outstanding figure.
+ */
+export const getNhisNotYetSubmittedSummary = async (branchId = null) => {
+  const claims = await fetchAllPages(() => {
+    let query = supabase
+      .from('nhis_claims')
+      .select('id, total_amount, nhis_claim_payments (paid_amount)')
+      .eq('status', 'served')
+      .order('id', { ascending: true })
+
+    if (branchId) query = query.eq('branch_id', branchId)
+    return query
+  })
+
+  const total = claims.reduce((sum, claim) => {
+    const paid = (claim.nhis_claim_payments || []).reduce((paidSum, payment) => paidSum + Number(payment.paid_amount || 0), 0)
+    return sum + Math.max(0, Number(claim.total_amount || 0) - paid)
+  }, 0)
+
+  return { total: Number(total.toFixed(2)), count: claims.length }
 }
 
 export const recordClaimPayment = async (paymentData) => {
@@ -419,7 +471,7 @@ export const updateClaimPayment = async (id, updates) => {
 }
 
 export const getReceivablesSummary = async (branchId = null) => {
-  const receivables = await getReceivables(branchId)
+  const { rows: receivables, missing } = await loadReceivables(branchId)
 
   const totalOutstanding = receivables.reduce((sum, receivable) => sum + receivable.outstanding, 0)
   const totalApproved = receivables.reduce((sum, receivable) => sum + Number(receivable.approved_amount || 0), 0)
@@ -449,5 +501,6 @@ export const getReceivablesSummary = async (branchId = null) => {
     byInsurer: Object.values(byInsurer).sort((a, b) => b.outstanding - a.outstanding),
     byAgeBucket,
     count: receivables.length,
+    missing,
   }
 }
