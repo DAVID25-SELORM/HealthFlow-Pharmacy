@@ -93,8 +93,10 @@ describe('tier-access report query bounds', () => {
     expect(attachLines).toContain('chunkValues(servingUserIds)')
     expect(attachLines).not.toContain(".in('claim_id', claimIds)")
     expect(attachLines).not.toContain(".in('id', servingUserIds)")
-    expect(reportBundle).toContain('chunkValues(missingClaimIds)')
-    expect(reportBundle).not.toContain(".in('id', missingClaimIds)")
+    // The drug filter asks for the matching claims in one query, so no list of claim IDs goes into a URL at all.
+    expect(reportBundle).toContain('drug_match:nhis_claim_medicines!inner(id)')
+    expect(reportBundle).not.toContain('missingClaimIds')
+    expect(reportBundle).not.toContain('matchingClaimIds')
   })
 })
 

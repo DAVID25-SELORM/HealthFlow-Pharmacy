@@ -29,6 +29,7 @@ Version: 2026-08 baseline. These IDs are stable and must be cited by changes tha
 | EXPORT-001 | CXF generation remains parseable, attachment-complete, bounded for large batches, and cannot silently omit requested files. | `nhisService` | Block | CXF and attachment tests |
 | RECYCLE-001 | Authorized deletion is recoverable, tenant-scoped, and auditable; permanent deletion requires explicit authorization. | Recycle Bin RPC/service | Block | `recycleBinService.test.js` |
 | OFFLINE-001 | Offline installer publication, download permission, signed access, branch registration, and sync remain separately authorized. | Installer release service, branch server | Block | Offline installer/sync tests |
+| REPORT-001 | A report never presents partial or unread data as complete: the report service says which lists went past its limit and which could not be read, the screen and every export say what is incomplete, and every report read is narrowed to the facility (and the branch, where the record has one) before it is limited. | `tier-access` report actions, `reportCompleteness`, `Reports` | Non-blocking (warning) | `reportBundleData.contract.test.js`, `reportCompleteness.test.js`, `Reports.test.jsx` |
 | AUDIT-001 | Security and critical claim actions retain actor, organization, action, and result evidence without exposing secrets or clinical payloads in logs. | Audit service and RPCs | Non-blocking where documented | `auditService.test.js` |
 
 ## Change Rule

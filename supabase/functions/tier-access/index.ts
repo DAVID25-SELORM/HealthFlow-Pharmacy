@@ -21,6 +21,7 @@ import {
   isChemicalShopOrganizationType,
 } from '../_shared/chemicalShopInventory.ts'
 import { provisionNhisCatalogForOrganization } from '../_shared/nhisCatalogProvisioning.ts'
+import { fetchCappedRows, mapCccRequestToLog, mapExportAlertToHistory } from '../_shared/reportData.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
@@ -624,7 +625,11 @@ const PATIENT_WORKSPACE_MAX_PATIENTS = 5000
 const PATIENT_WORKSPACE_MAX_NHIS_CLAIMS = 1000
 const PATIENT_WORKSPACE_DEFAULT_PAGE_SIZE = 100
 const PATIENT_WORKSPACE_MAX_PAGE_SIZE = 500
-const REPORT_BUNDLE_MAX_ROWS = 1000
+// Each list in a report is read page by page up to this many rows, and the response says when there were more.
+// It is bounded because the function has limited memory and processing time per request.
+const REPORT_BUNDLE_MAX_ROWS = 5000
+// Matching sale lines are looked up again by sale, a few dozen at a time, so this stays small.
+const REPORT_DRUG_SALE_LINE_CAP = 1000
 const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 250
 const REPORT_BUNDLE_DEFAULT_NHIS_CLAIMS = 200
 const REPORT_AGGREGATE_PAGE_SIZE = 500
@@ -5639,6 +5644,7 @@ const getReportNhisAggregate = async (
       .select('id, status, total_amount, service_date_from, submission_month, created_at')
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + REPORT_AGGREGATE_PAGE_SIZE - 1)
 
     if (startDate) query = query.gte('service_date_from', startDate)
@@ -5789,6 +5795,7 @@ const getReportNhisPage = async (
     .select(REPORT_NHIS_CLAIM_SELECT_FIELDS, { count: 'exact' })
     .eq('organization_id', organizationId)
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .range(offset, offset + limit - 1)
 
   if (scopedBranchId) query = query.eq('branch_id', scopedBranchId)
@@ -5843,7 +5850,7 @@ const getReportBundle = async (
       .select(SALES_SELECT_FIELDS)
       .eq('organization_id', organizationId)
       .order('sale_date', { ascending: false })
-      .limit(reportLimit)
+      .order('id', { ascending: false })
 
     if (startDate) query = query.gte('sale_date', `${startDate}T00:00:00`)
     if (endDate) query = query.lte('sale_date', `${endDate}T23:59:59`)
@@ -5852,23 +5859,24 @@ const getReportBundle = async (
     return query
   }
 
-  let salesRequest: PromiseLike<{ data: unknown[] | null; error: unknown }> = buildSalesQuery()
+  const fetchSales = (saleIds: string[] | null = null) =>
+    fetchCappedRows(() => buildSalesQuery(saleIds), reportLimit)
 
-  let claimsQuery = adminClient
-    .from('claims')
-    .select(CLAIM_SELECT_FIELDS)
-    .eq('organization_id', organizationId)
-    .order('submitted_at', { ascending: false })
-    .limit(reportLimit)
+  let salesRequest: PromiseLike<{ data: unknown[] | null; error: unknown; truncated: boolean }> = fetchSales()
 
-  if (startDate) {
-    claimsQuery = claimsQuery.gte('service_date', startDate)
+  const buildClaimsQuery = () => {
+    let query = adminClient
+      .from('claims')
+      .select(CLAIM_SELECT_FIELDS)
+      .eq('organization_id', organizationId)
+      .order('submitted_at', { ascending: false })
+      .order('id', { ascending: false })
+
+    if (startDate) query = query.gte('service_date', startDate)
+    if (endDate) query = query.lte('service_date', endDate)
+    if (scopedBranchId) query = query.eq('branch_id', scopedBranchId)
+    return query
   }
-
-  if (endDate) {
-    claimsQuery = claimsQuery.lte('service_date', endDate)
-  }
-  if (scopedBranchId) claimsQuery = claimsQuery.eq('branch_id', scopedBranchId)
 
   if (drugSearchTerm.length >= 3) {
     const drugNamePattern = `%${drugSearchTerm}%`
@@ -5887,13 +5895,21 @@ const getReportBundle = async (
     if (matchingDrugIds.length > 0) {
       const matchingSaleItemGroups = await Promise.all(
         chunkValues(matchingDrugIds).map((drugIds) =>
-          adminClient
-            .from('sale_items')
-            .select('sale_id')
-            .in('drug_id', drugIds)
-            .limit(reportLimit)
+          fetchCappedRows(() => {
+            // only lines from this facility's sales in the period, so older sales cannot fill the limit
+            let query = adminClient
+              .from('sale_items')
+              .select('id, sale_id, sales!inner(id)')
+              .in('drug_id', drugIds)
+              .eq('sales.organization_id', organizationId)
+              .order('id', { ascending: true })
+            if (startDate) query = query.gte('sales.sale_date', `${startDate}T00:00:00`)
+            if (endDate) query = query.lte('sales.sale_date', `${endDate}T23:59:59`)
+            return query
+          }, REPORT_DRUG_SALE_LINE_CAP)
         )
       )
+      const matchingLinesTruncated = matchingSaleItemGroups.some((group) => group.truncated)
       const matchingSaleItems = matchingSaleItemGroups.flatMap(({ data, error }) => {
         if (error) throw error
         return data || []
@@ -5903,42 +5919,47 @@ const getReportBundle = async (
 
       if (matchingSaleIds.length > 0) {
         salesRequest = Promise.all(
-          chunkValues(matchingSaleIds).map((saleIds) => buildSalesQuery(saleIds))
+          chunkValues(matchingSaleIds).map((saleIds) => fetchSales(saleIds))
         ).then((groups) => {
           const rows = groups.flatMap(({ data, error }) => {
             if (error) throw error
             return data || []
           })
           rows.sort((left, right) =>
-            normalizeText((right as Record<string, unknown>).sale_date)
-              .localeCompare(normalizeText((left as Record<string, unknown>).sale_date))
+            normalizeText(right.sale_date).localeCompare(normalizeText(left.sale_date))
           )
-          return { data: rows.slice(0, reportLimit), error: null }
+          return {
+            data: rows.slice(0, reportLimit),
+            error: null,
+            truncated: matchingLinesTruncated || rows.length > reportLimit || groups.some((group) => group.truncated),
+          }
         })
       } else {
-        salesRequest = Promise.resolve({ data: [], error: null })
+        salesRequest = Promise.resolve({ data: [], error: null, truncated: false })
       }
     } else {
-      salesRequest = Promise.resolve({ data: [], error: null })
+      salesRequest = Promise.resolve({ data: [], error: null, truncated: false })
     }
   }
 
   const [
-    { data: sales, error: salesError },
-    { data: claims, error: claimsError },
-    { data: patients, error: patientsError },
-    { data: activeDrugs, error: activeDrugsError },
-    { data: allDrugs, error: allDrugsError },
+    { data: sales, error: salesError, truncated: salesTruncated },
+    { data: claims, error: claimsError, truncated: claimsTruncated },
+    { data: patients, error: patientsError, truncated: patientsTruncated },
+    { data: activeDrugs, error: activeDrugsError, truncated: activeDrugsTruncated },
+    { data: allDrugs, error: allDrugsError, truncated: allDrugsTruncated },
   ] = await Promise.all([
     salesRequest,
-    includeClaims ? claimsQuery : Promise.resolve({ data: [], error: null }),
-    adminClient
+    includeClaims
+      ? fetchCappedRows(buildClaimsQuery, reportLimit)
+      : Promise.resolve({ data: [], error: null, truncated: false }),
+    fetchCappedRows(() => adminClient
       .from('patients')
       .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS)
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false })
-      .limit(reportLimit),
-    adminClient
+      .order('id', { ascending: false }), reportLimit),
+    fetchCappedRows(() => adminClient
       .from('drugs')
       .select(REPORT_DRUG_SELECT_FIELDS)
       .eq('organization_id', organizationId)
@@ -5946,14 +5967,14 @@ const getReportBundle = async (
       .eq('status', 'active')
       .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`)
       .order('created_at', { ascending: false })
-      .limit(reportLimit),
-    adminClient
+      .order('id', { ascending: false }), reportLimit),
+    fetchCappedRows(() => adminClient
       .from('drugs')
       .select(REPORT_DRUG_SELECT_FIELDS)
       .eq('organization_id', organizationId)
       .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`)
-      .limit(reportLimit),
+      .order('id', { ascending: true }), reportLimit),
   ])
 
   if (salesError) throw salesError
@@ -6025,9 +6046,10 @@ const getReportBundle = async (
       .gte('service_date_from', startDate || '1900-01-01')
       .lte('service_date_from', endDate || '2999-12-31')
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(nhisClaimLimit),
     getReportNhisAggregate(adminClient, organizationId, startDate, endDate, scopedBranchId),
-    adminClient
+    fetchCappedRows(() => adminClient
       .from('purchases')
       .select('*, purchase_items (*, drugs (medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class))')
       .eq('organization_id', organizationId)
@@ -6035,25 +6057,33 @@ const getReportBundle = async (
       .gte('purchase_date', startDate || '1900-01-01')
       .lte('purchase_date', endDate || '2999-12-31')
       .order('purchase_date', { ascending: false })
-      .limit(reportLimit),
-    adminClient
+      .order('id', { ascending: false }), reportLimit),
+    fetchCappedRows(() => adminClient
       .from('suppliers')
       .select('*')
       .eq('organization_id', organizationId)
       .order('name', { ascending: true })
-      .limit(reportLimit),
-    adminClient
-      .from('nhia_claim_batches')
-      .select('*')
+      .order('id', { ascending: true }), reportLimit),
+    // Export records carry no branch, so someone limited to one branch is not shown the facility's.
+    scopedBranchId
+      ? Promise.resolve({ data: [], error: null, truncated: false })
+      : fetchCappedRows(() => adminClient
+        .from('claim_export_alerts')
+        .select('id, artifact_sha256, period, claim_count, created_at')
+        .eq('organization_id', organizationId)
+        .gte('created_at', `${startDate || '1900-01-01'}T00:00:00`)
+        .lte('created_at', `${endDate || '2999-12-31'}T23:59:59`)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }), reportLimit),
+    fetchCappedRows(() => adminClient
+      .from('ccc_attendance_requests')
+      .select('id, actor_id, branch_id, status, error_code, created_at, branches (name), users (full_name)')
       .eq('organization_id', organizationId)
       .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
+      .gte('created_at', `${startDate || '1900-01-01'}T00:00:00`)
+      .lte('created_at', `${endDate || '2999-12-31'}T23:59:59`)
       .order('created_at', { ascending: false })
-      .limit(reportLimit),
-    adminClient
-      .from('nhia_submission_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200),
+      .order('id', { ascending: false }), reportLimit),
   ])
 
   const getOptionalRows = (result: PromiseSettledResult<unknown>) => {
@@ -6104,49 +6134,58 @@ const getReportBundle = async (
     }
   })
   const suppliers = getOptionalRows(suppliersResult)
-  const exportHistory = getOptionalRows(exportHistoryResult)
-  const submissionLogs = getOptionalRows(submissionLogsResult)
+  const exportHistory = (getOptionalRows(exportHistoryResult) as Record<string, unknown>[]).map(mapExportAlertToHistory)
+  const submissionLogs = (getOptionalRows(submissionLogsResult) as Record<string, unknown>[]).map(mapCccRequestToLog)
+
+  // What was left out, and what could not be read at all, so the screen never shows either as a real figure.
+  const wasTruncated = (result: PromiseSettledResult<unknown>) =>
+    result.status === 'fulfilled' && Boolean((result.value as { truncated?: boolean }).truncated)
+  const failed = (result: PromiseSettledResult<unknown>) =>
+    result.status !== 'fulfilled' || Boolean((result.value as { error?: unknown }).error)
+  const optionalResults = {
+    nhisClaims: nhisClaimsResult,
+    purchases: purchasesResult,
+    suppliers: suppliersResult,
+    exportHistory: exportHistoryResult,
+    submissionLogs: submissionLogsResult,
+  }
+  const unavailable = Object.entries(optionalResults)
+    .filter(([, result]) => failed(result))
+    .map(([name]) => name)
+  const truncated = {
+    sales: salesTruncated,
+    claims: claimsTruncated,
+    patients: patientsTruncated,
+    drugs: activeDrugsTruncated || allDrugsTruncated,
+    purchases: wasTruncated(purchasesResult),
+    suppliers: wasTruncated(suppliersResult),
+    exportHistory: wasTruncated(exportHistoryResult),
+    submissionLogs: wasTruncated(submissionLogsResult),
+  }
 
   if (drugSearchTerm.length >= 3) {
     const medicinePattern = `%${drugSearchTerm.split(' ')[0]}%`
-    const { data: matchingMedicines } = await adminClient
-      .from('nhis_claim_medicines')
-      .select('claim_id')
-      .or(`description.ilike.${medicinePattern},drug_code.ilike.${medicinePattern}`)
+    // One query: the newest claims of this facility, branch and period that have a matching medicine. The
+    // narrowing happens before the limit, so other facilities' lines cannot crowd these out.
+    let matchingClaimsQuery = adminClient
+      .from('nhis_claims')
+      .select(`${REPORT_NHIS_CLAIM_SELECT_FIELDS}, drug_match:nhis_claim_medicines!inner(id)`)
+      .eq('organization_id', organizationId)
+      .or(`description.ilike.${medicinePattern},drug_code.ilike.${medicinePattern}`, { referencedTable: 'drug_match' })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(nhisClaimLimit)
 
-    const matchingClaimIds = Array.from(
-      new Set((matchingMedicines || []).map((row) => normalizeText(row.claim_id)).filter(Boolean))
-    )
+    if (scopedBranchId) matchingClaimsQuery = matchingClaimsQuery.eq('branch_id', scopedBranchId)
+    if (startDate) matchingClaimsQuery = matchingClaimsQuery.gte('service_date_from', startDate)
+    if (endDate) matchingClaimsQuery = matchingClaimsQuery.lte('service_date_from', endDate)
+
+    const { data: matchingClaims } = await matchingClaimsQuery
     const loadedClaimIds = new Set(nhisClaims.map((claim) => normalizeText(claim.id)).filter(Boolean))
-    const missingClaimIds = matchingClaimIds.filter((claimId) => !loadedClaimIds.has(claimId))
-
-    if (missingClaimIds.length) {
-      const matchingClaimGroups = await Promise.all(chunkValues(missingClaimIds).map((ids) =>
-        fetchAllWorkspaceRows(() => {
-          let matchingClaimsQuery = adminClient
-            .from('nhis_claims')
-            .select(REPORT_NHIS_CLAIM_SELECT_FIELDS)
-            .eq('organization_id', organizationId)
-            .in('id', ids)
-            .order('created_at', { ascending: false })
-
-          if (startDate) {
-            matchingClaimsQuery = matchingClaimsQuery.gte('service_date_from', startDate)
-          }
-
-          if (endDate) {
-            matchingClaimsQuery = matchingClaimsQuery.lte('service_date_from', endDate)
-          }
-          if (scopedBranchId) matchingClaimsQuery = matchingClaimsQuery.eq('branch_id', scopedBranchId)
-          return matchingClaimsQuery
-        })
-      ))
-      const matchingClaims = matchingClaimGroups.flat()
-        .sort((left, right) => normalizeText(right.created_at).localeCompare(normalizeText(left.created_at)))
-        .slice(0, nhisClaimLimit)
-      nhisClaims = [...nhisClaims, ...(matchingClaims as Record<string, unknown>[])]
-    }
+    const extraClaims = ((matchingClaims || []) as unknown as Record<string, unknown>[])
+      .filter((claim) => !loadedClaimIds.has(normalizeText(claim.id)))
+      .map(({ drug_match: _match, ...claim }) => claim)
+    nhisClaims = [...nhisClaims, ...extraClaims]
   }
 
   nhisClaims = await attachNhisClaimLines(adminClient, nhisClaims, organizationId)
@@ -6166,6 +6205,7 @@ const getReportBundle = async (
     exportHistory,
     submissionLogs,
     monthlyNhisSubmission,
+    unavailable,
     pagination: {
       nhisClaims: {
         offset: 0,
@@ -6173,6 +6213,7 @@ const getReportBundle = async (
         total: nhisTotal,
         hasMore: nhisClaims.length < nhisTotal,
       },
+      truncated,
     },
     staffActivity: [
       ...submissionLogs.map((log) => ({

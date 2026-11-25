@@ -35,7 +35,10 @@ import {
 import { logPerformance } from '../utils/performance'
 import { getErrorMessage } from '../utils/requestErrors'
 import UpgradeGate from '../components/UpgradeGate'
-import { describePartials, getReportPartials, getReportWarnings } from '../utils/reportCompleteness'
+import {
+  NHIS_LOAD_ALL_MAX, NHIS_LOAD_ALL_PAGE_SIZE, appendNhisPage, describePartials, getNhisPagedCount, getReportPartials,
+  getReportWarnings,
+} from '../utils/reportCompleteness'
 import './Reports.css'
 import '../styles/dashboardDesign.css'
 
@@ -910,8 +913,9 @@ const getReportRows = (reportId, bundle, filters = {}) => {
         batch.status,
         batch.export_format || batch.exportFormat,
         batch.claim_count || batch.claimCount,
-        money(batch.total_amount ?? batch.totalAmount),
-        batch.file_name || batch.fileName,
+        // an export record carries no amount: show that, not zero
+        (batch.total_amount ?? batch.totalAmount ?? null) === null ? '-' : money(batch.total_amount ?? batch.totalAmount),
+        batch.file_name || batch.fileName || '-',
         formatAppDateTime(batch.created_at || batch.createdAt),
         formatAppDateTime(batch.submitted_at || batch.submittedAt),
         getUserId(batch),
@@ -1089,6 +1093,10 @@ const Reports = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingMoreNhis, setLoadingMoreNhis] = useState(false)
+  const [loadAllProgress, setLoadAllProgress] = useState(null)
+  // The filters the figures on screen were generated with: further pages must use these, not later edits.
+  const generatedFiltersRef = useRef(null)
+  const reportRunRef = useRef(0)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [bundle, setBundle] = useState(null)
@@ -1254,6 +1262,10 @@ const Reports = () => {
       setLoading(true)
       setError('')
       setNotice('')
+      // Anything still loading pages for the previous figures is abandoned.
+      reportRunRef.current += 1
+      setLoadingMoreNhis(false)
+      setLoadAllProgress(null)
 
       if (!tierLimits.hasReports) {
         setBundle(null)
@@ -1276,6 +1288,7 @@ const Reports = () => {
         drug: nextFilters.drug,
         nhisClaimLimit: nextFilters.nhisClaimLimit,
       })
+      generatedFiltersRef.current = nextFilters
       setBundle(data)
       setHasGeneratedReports(true)
       logPerformance('reports.bundle', startedAt, role, {
@@ -1289,45 +1302,41 @@ const Reports = () => {
     }
   }, [filters, role, tierLimits.hasReports])
 
-  const loadMoreNhisClaims = useCallback(async () => {
-    if (loadingMoreNhis || !normalizedBundle.pagination?.nhisClaims?.hasMore) return
+  const loadNhisClaims = useCallback(async ({ all = false } = {}) => {
+    if (loadingMoreNhis || !bundle?.pagination?.nhisClaims?.hasMore) return
 
+    const run = reportRunRef.current
+    const used = generatedFiltersRef.current || filters
+    let working = bundle
     try {
       setLoadingMoreNhis(true)
       setError('')
-      const result = await getReportNhisPage({
-        startDate: filters.startDate,
-        endDate: filters.endDate,
-        branchId: filters.branch,
-        offset: normalizedBundle.nhisClaims.length,
-        limit: normalizedBundle.pagination.nhisClaims.limit || 200,
-      })
-      const nextRows = result?.nhisClaims || []
-      setBundle((current) => {
-        const existing = current?.nhisClaims || []
-        const seen = new Set(existing.map((claim) => claim.id))
-        return {
-          ...(current || {}),
-          nhisClaims: [...existing, ...nextRows.filter((claim) => !seen.has(claim.id))],
-          pagination: {
-            ...(current?.pagination || {}),
-            nhisClaims: result?.pagination || current?.pagination?.nhisClaims,
-          },
-        }
-      })
+      do {
+        const offset = getNhisPagedCount(working)
+        if (all) setLoadAllProgress({ loaded: working.nhisClaims?.length || 0, total: working.pagination.nhisClaims.total })
+        const result = await getReportNhisPage({
+          startDate: used.startDate,
+          endDate: used.endDate,
+          branchId: used.branch,
+          offset,
+          limit: all ? NHIS_LOAD_ALL_PAGE_SIZE : working.pagination.nhisClaims.limit || 200,
+        })
+        if (run !== reportRunRef.current) return
+        working = appendNhisPage(working, result, offset)
+      } while (all && working.pagination.nhisClaims.hasMore)
+      setBundle(working)
     } catch (loadError) {
-      setError(loadError.message || 'Unable to load more NHIS report rows.')
+      if (run !== reportRunRef.current) return
+      // keep the pages that did arrive; the warning keeps saying how many are still missing
+      setBundle(working)
+      setError(`${loadError.message || 'Unable to load more NHIS report rows.'} ${(working.nhisClaims?.length || 0).toLocaleString('en-GB')} claims are loaded; try again to continue.`)
     } finally {
-      setLoadingMoreNhis(false)
+      if (run === reportRunRef.current) {
+        setLoadingMoreNhis(false)
+        setLoadAllProgress(null)
+      }
     }
-  }, [
-    filters.endDate,
-    filters.branch,
-    filters.startDate,
-    loadingMoreNhis,
-    normalizedBundle.nhisClaims.length,
-    normalizedBundle.pagination?.nhisClaims,
-  ])
+  }, [bundle, filters, loadingMoreNhis])
 
   useEffect(() => {
     if (!notice) return undefined
@@ -1581,10 +1590,21 @@ const Reports = () => {
               {partialMessages.map((message) => <li key={message}>{message}</li>)}
             </ul>
             {partials.nhis && (
-              <p>
-                On the NHIS tab, <b>Load more</b> adds more claims. For every patient given particular medicines, use
-                {' '}<b>NHIS, then Claims, then Medicine search</b>.
-              </p>
+              <>
+                {bundle?.pagination?.nhisClaims?.hasMore && partials.nhis.total <= NHIS_LOAD_ALL_MAX && (
+                  <button type="button" className="btn btn-primary" disabled={loadingMoreNhis} onClick={() => void loadNhisClaims({ all: true })}>
+                    {loadAllProgress
+                      ? `Loading ${loadAllProgress.loaded.toLocaleString('en-GB')} of ${Number(loadAllProgress.total || 0).toLocaleString('en-GB')}\u2026`
+                      : `Load all ${partials.nhis.total.toLocaleString('en-GB')} NHIS claims`}
+                  </button>
+                )}
+                {partials.nhis.total > NHIS_LOAD_ALL_MAX && (
+                  <p>There are too many claims to load at once. Choose a shorter period.</p>
+                )}
+                <p>
+                  For every patient given particular medicines, use <b>NHIS, then Claims, then Medicine search</b>.
+                </p>
+              </>
             )}
           </div>
         )}
@@ -1865,7 +1885,7 @@ const Reports = () => {
                 <button
                   className="btn btn-outline"
                   type="button"
-                  onClick={() => void loadMoreNhisClaims()}
+                  onClick={() => void loadNhisClaims()}
                   disabled={loadingMoreNhis}
                 >
                   {loadingMoreNhis ? 'Loading...' : 'Load more'}

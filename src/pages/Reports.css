@@ -117,6 +117,10 @@
   margin: 0.4rem 0 0;
 }
 
+.reports-incomplete .btn {
+  margin-top: 0.6rem;
+}
+
 .reports-incomplete--table {
   margin-bottom: 0.75rem;
 }

@@ -284,6 +284,72 @@ describe('Reports', () => {
       expect(JSON.stringify(downloadCsv.mock.calls.at(-1)[3])).toContain(`WARNING, INCOMPLETE: Only ${reportBundle.nhisClaims.length} of 1,234`)
     }, 20000)
 
+    const claimNumbered = (number) => ({ ...reportBundle.nhisClaims[0], id: `paged-${number}`, claim_number: `NHIS-P${number}` })
+    const partial = {
+      ...reportBundle,
+      nhisClaims: [claimNumbered(1)],
+      pagination: { nhisClaims: { offset: 0, limit: 1, total: 3, hasMore: true } },
+    }
+    const pageOf = (number, hasMore) => ({ nhisClaims: [claimNumbered(number)], pagination: { total: 3, hasMore } })
+
+    it('loads every NHIS claim, with the dates the report was generated for, and then drops the warning', async () => {
+      mocks.getReportBundle.mockResolvedValue(partial)
+      mocks.getReportNhisPage.mockResolvedValueOnce(pageOf(2, true)).mockResolvedValueOnce(pageOf(3, false))
+      render(<Reports />)
+      generate()
+      const button = await screen.findByRole('button', { name: 'Load all 3 NHIS claims' })
+      const generatedWith = mocks.getReportBundle.mock.calls[0][0]
+      // editing the dates afterwards must not mix another period into these figures
+      fireEvent.change(screen.getByDisplayValue(generatedWith.startDate), { target: { value: '2020-01-01' } })
+      fireEvent.click(button)
+      await waitFor(() => expect(screen.queryByText(/figures on this page are incomplete/)).not.toBeInTheDocument())
+      expect(mocks.getReportNhisPage.mock.calls.map(([options]) => [options.offset, options.limit, options.startDate])).toEqual([
+        [1, 250, generatedWith.startDate],
+        [2, 250, generatedWith.startDate],
+      ])
+    }, 20000)
+
+    it('keeps the claims it did load when a page fails, still warns, and can continue', async () => {
+      mocks.getReportBundle.mockResolvedValue(partial)
+      mocks.getReportNhisPage.mockResolvedValueOnce(pageOf(2, true)).mockRejectedValueOnce(new Error('Connection lost.'))
+      render(<Reports />)
+      generate()
+      fireEvent.click(await screen.findByRole('button', { name: 'Load all 3 NHIS claims' }))
+      expect(await screen.findByText(/Connection lost\. 2 claims are loaded; try again to continue\./)).toBeInTheDocument()
+      expect(screen.getByText(/Only 2 of 3 NHIS claims are loaded/)).toBeInTheDocument()
+
+      mocks.getReportNhisPage.mockResolvedValueOnce(pageOf(3, false))
+      fireEvent.click(screen.getByRole('button', { name: 'Load all 3 NHIS claims' }))
+      await waitFor(() => expect(screen.queryByText(/figures on this page are incomplete/)).not.toBeInTheDocument())
+      expect(mocks.getReportNhisPage.mock.calls.at(-1)[0].offset).toBe(2)
+    }, 20000)
+
+    it('asks for a shorter period instead of loading an enormous number of claims', async () => {
+      mocks.getReportBundle.mockResolvedValue({ ...partial, pagination: { nhisClaims: { offset: 0, limit: 1, total: 25000, hasMore: true } } })
+      render(<Reports />)
+      generate()
+      expect(await screen.findByText(/Choose a shorter period/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Load all/ })).not.toBeInTheDocument()
+    }, 15000)
+
+    it('shows a dash, not zero, for the amount an export record does not have', async () => {
+      const { downloadCsv } = await import('../services/reportsService')
+      mocks.getReportBundle.mockResolvedValue({
+        ...complete,
+        exportHistory: [{ id: 'x', batch_number: 'abc123', status: 'exported', export_format: 'CXF', claim_count: 7, total_amount: null, branch_name: '-' }],
+      })
+      const { container } = render(<Reports />)
+      generate()
+      await waitFor(() => expect(summaryCard(container, 'Sales')).toHaveTextContent('transactions'))
+      fireEvent.click(screen.getByRole('tab', { name: /export/i }))
+      await waitFor(() => expect(container.querySelector('.report-table-card')).toHaveTextContent('abc123'))
+      fireEvent.click(screen.getByRole('button', { name: /export all csv/i }))
+      const row = downloadCsv.mock.calls.at(-1)[2][0]
+      expect(row[3]).toBe(7)
+      expect(row[4]).toBe('-')
+      expect(row[9]).toBe('-')
+    }, 20000)
+
     it('shows no warning when everything is loaded', async () => {
       mocks.getReportBundle.mockResolvedValue(complete)
       const { container } = render(<Reports />)
@@ -464,6 +530,12 @@ describe('Reports', () => {
   })
 
   it('loads additional NHIS detail pages without regenerating the full bundle', async () => {
+    // a first batch of the size the server was asked for, with more still to read
+    const batch = reportBundle.nhisClaims.length
+    mocks.getReportBundle.mockResolvedValue({
+      ...reportBundle,
+      pagination: { nhisClaims: { offset: 0, limit: batch, total: batch + 1, hasMore: true } },
+    })
     render(<Reports />)
     fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
     await waitFor(() => expect(mocks.getReportBundle).toHaveBeenCalledTimes(1))
@@ -472,7 +544,7 @@ describe('Reports', () => {
     fireEvent.click(screen.getByRole('button', { name: /Load more/i }))
 
     await waitFor(() => expect(mocks.getReportNhisPage).toHaveBeenCalledWith(
-      expect.objectContaining({ offset: 3, limit: 1 })
+      expect.objectContaining({ offset: batch, limit: batch })
     ))
     expect(mocks.getReportBundle).toHaveBeenCalledTimes(1)
   })
