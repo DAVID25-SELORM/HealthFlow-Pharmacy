@@ -13,8 +13,12 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseSetupBlock, SetupBlockError, summarizeSetup } from '../src/cloudSetupBlock.js'
+import { assertComputerCanConnect } from '../src/connectGuard.js'
 
 const checkOnly = process.argv.includes('--check')
+// With --check: also ask whether the computer's existing install may be connected to this pharmacy.
+const installedRootAt = process.argv.indexOf('--installed-root')
+const installedRoot = installedRootAt >= 0 ? process.argv[installedRootAt + 1] || '' : ''
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 let scratchDir = ''
@@ -52,6 +56,19 @@ try {
 } catch (error) {
   if (error instanceof SetupBlockError) refuse(error.message)
   throw error
+}
+
+if (checkOnly && installedRoot) {
+  try {
+    assertComputerCanConnect({
+      databasePaths: [path.join(installedRoot, 'data', 'healthflow-branch.sqlite')],
+      envPath: path.join(installedRoot, 'local-branch-server', '.env'),
+      organizationId: input.organizationId,
+    })
+  } catch (error) {
+    if (error?.status === 400) refuse(error.message)
+    throw error
+  }
 }
 
 // One rolling copy of the .env as it was, in case the technician needs to go back.

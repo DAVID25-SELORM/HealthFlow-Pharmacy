@@ -172,9 +172,17 @@ export const getOfflineSalesQueue = async () => {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
 }
 
-export const getOfflineSalesSummary = async () => {
+// A browser can be shared. A queued sale belongs to the pharmacy that made it, and only that pharmacy may see it
+// counted or send it: sent by whoever signed in next, it would be recorded under their pharmacy. A sale with no
+// pharmacy recorded stays with the person who made it.
+export const isOwnQueuedSale = (sale, { organizationId = '', userId = '' } = {}) =>
+  sale?.organizationId
+    ? sale.organizationId === organizationId
+    : Boolean(userId) && sale?.createdBy === userId
+
+export const getOfflineSalesSummary = async (owner = {}) => {
   try {
-    const sales = await getOfflineSalesQueue()
+    const sales = (await getOfflineSalesQueue()).filter((sale) => isOwnQueuedSale(sale, owner))
     const summary = sales.reduce(
       (result, sale) => {
         const status = sale.status || 'pending'
@@ -219,13 +227,14 @@ const buildClaimPayloadForSync = (claimPayload, offlineSaleNumber, remoteSaleNum
   }
 }
 
-const runOfflineSalesSync = async () => {
+const runOfflineSalesSync = async (owner) => {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return { synced: 0, failed: 0, skipped: true }
   }
 
   const sales = await getOfflineSalesQueue()
   const syncableSales = sales
+    .filter((sale) => isOwnQueuedSale(sale, owner))
     .filter((sale) => ['pending', 'failed', 'syncing'].includes(sale.status || 'pending'))
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
 
@@ -287,12 +296,12 @@ const runOfflineSalesSync = async () => {
   return { synced, failed, skipped: false }
 }
 
-export const syncOfflineSales = async () => {
+export const syncOfflineSales = async (owner = {}) => {
   if (currentSyncPromise) {
     return currentSyncPromise
   }
 
-  currentSyncPromise = runOfflineSalesSync()
+  currentSyncPromise = runOfflineSalesSync(owner)
 
   try {
     return await currentSyncPromise

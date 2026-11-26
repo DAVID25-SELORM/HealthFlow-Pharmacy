@@ -1134,9 +1134,9 @@ const Sales = () => {
   }
 
   const refreshOfflineSalesSummary = useCallback(async () => {
-    const summary = await getOfflineSalesSummary()
+    const summary = await getOfflineSalesSummary({ organizationId: profile?.organization_id, userId: user?.id })
     setOfflineSalesSummary(summary)
-  }, [])
+  }, [profile?.organization_id, user?.id])
 
   const syncPendingOfflineSales = useCallback(
     async ({ silent = false } = {}) => {
@@ -1149,7 +1149,7 @@ const Sales = () => {
 
       try {
         setSyncingOfflineSales(true)
-        const result = await syncOfflineSales()
+        const result = await syncOfflineSales({ organizationId: profile?.organization_id, userId: user?.id })
         await refreshOfflineSalesSummary()
 
         if (result.synced > 0) {
@@ -1177,7 +1177,7 @@ const Sales = () => {
         setSyncingOfflineSales(false)
       }
     },
-    [effectiveBranchId, isOnline, notify, refreshOfflineSalesSummary, searchTerm, user?.id]
+    [effectiveBranchId, isOnline, notify, profile?.organization_id, refreshOfflineSalesSummary, searchTerm, user?.id]
   )
 
   const draftOrganizationId = organization?.id || profile?.organization_id || ''

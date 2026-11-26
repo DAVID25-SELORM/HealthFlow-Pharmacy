@@ -91,6 +91,9 @@ try {
   Write-Check -Name 'Protected health endpoint' -Passed ($health.StatusCode -eq 200) -Detail "status=$($health.StatusCode)"
   $healthBody = $health.Content | ConvertFrom-Json
   Write-Check -Name 'Database integrity' -Passed ($healthBody.database.integrity -eq 'ok') -Detail "integrity=$($healthBody.database.integrity)"
+  if ($healthBody.dataLocked) {
+    Write-Check -Name 'Records belong to the connected pharmacy' -Passed $false -Detail $healthBody.message
+  }
   Write-Check -Name 'Facility TLS ready' -Passed ($healthBody.tls.ready -eq $true) -Detail "status=$($healthBody.tls.status)"
 } catch {
   Write-Check -Name 'Protected health endpoint' -Passed $false -Detail $_.Exception.Message

@@ -1,9 +1,22 @@
 import { getBranchServerConfig, isServedByOfflineServer } from '../services/branchServerApi'
+import { isOfflineServerLocked } from '../services/branchBrowserAccess'
 import './OfflineConnectionNotice.css'
 
 // Shown when the page came from an offline server but this browser is not registered with it, so offline sign-in,
 // offline work and updates cannot be used here. Without this it would fail without saying why.
 const OfflineConnectionNotice = () => {
+  if (isOfflineServerLocked()) {
+    return (
+      <div className="offline-connection-notice" role="alert">
+        <strong>This offline computer is locked.</strong>
+        <span>
+          It holds another pharmacy’s records. Offline features are off to protect them. Do not delete anything; ask
+          HealthFlow support for help.
+        </span>
+      </div>
+    )
+  }
+
   if (!isServedByOfflineServer() || getBranchServerConfig().authorized) return null
 
   return (

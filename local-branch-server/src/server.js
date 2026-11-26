@@ -102,6 +102,7 @@ import {
   syncPendingOutbox,
 } from './supabaseSync.js'
 import { startSyncWorker, stopSyncWorker, waitForSyncWorkerIdle } from './syncWorker.js'
+import { DATA_LOCKED_MESSAGE, evaluateDataOwner } from './dataOwner.js'
 import { getOfflineReadiness } from './offlineReadiness.js'
 import { registerSpaFallback } from './spaFallback.js'
 import {
@@ -181,6 +182,8 @@ const setFrontendCacheHeaders = (response, filePath) => {
 }
 
 const app = express()
+// Whose records this database holds, decided once at start: the connection only changes with a restart.
+const dataOwnership = evaluateDataOwner(db, config.organizationId)
 if (config.trustProxy) {
   app.set('trust proxy', config.trustProxy)
 }
@@ -244,6 +247,7 @@ app.get('/branch-runtime-config.js', (_request, response) => {
         token: '',
         organizationId: config.organizationId,
         branchId: config.branchId,
+        dataLocked: dataOwnership.locked,
       })};`
     )
 })
@@ -358,7 +362,8 @@ app.get('/health', requireBranchAccess, (_request, response) => {
       sizeBytes: database.estimatedSizeBytes,
     },
     tls: getPublicTlsStatus(tlsRuntime),
-    nhia,
+    // While locked, nothing about the other pharmacy is reported, only why.
+    ...(dataOwnership.locked ? { dataLocked: true, message: DATA_LOCKED_MESSAGE } : { nhia }),
   })
 })
 
@@ -366,6 +371,16 @@ if (config.claimBridge.enabled) {
   app.use(config.claimBridge.publicPath, createClaimBridgeRouter())
   console.log(`CLAIM-it production bridge mounted at ${config.claimBridge.publicPath}`)
 }
+
+// A database that holds another pharmacy's records is not read, changed or synced. Nothing is deleted. This comes
+// before every /api route, the ones open without sign-in included.
+app.use('/api', (_request, response, next) => {
+  if (!dataOwnership.locked) {
+    next()
+    return
+  }
+  response.status(423).json({ error: DATA_LOCKED_MESSAGE, code: 'DATA_BELONGS_TO_ANOTHER_PHARMACY' })
+})
 
 app.post('/api/payments/webhook/hubtel', async (request, response, next) => {
   try {
@@ -1730,7 +1745,11 @@ server.listen(config.port, effectiveHost, () => {
   const protocol = tlsRuntime.ready ? 'https' : 'http'
   console.log(`HealthFlow local branch server listening on ${protocol}://${effectiveHost}:${config.port}`)
   console.log(`TLS status: ${tlsRuntime.status}${tlsRuntime.publicUrl ? ` (${tlsRuntime.publicUrl})` : ''}`)
-  startSyncWorker()
+  if (dataOwnership.locked) {
+    console.error(`LOCKED: ${DATA_LOCKED_MESSAGE}`)
+  } else {
+    startSyncWorker()
+  }
   startUpdateScheduler()
 })
 

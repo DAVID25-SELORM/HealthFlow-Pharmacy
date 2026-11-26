@@ -109,6 +109,28 @@ its stored device credential from calling local APIs.
   database backups and is never sent anywhere. Deleting it signs everyone out and a new one is made.
 - `BRANCH_SERVER_TOKEN` is still used by the server's own scripts (health check and updater).
 
+## One computer, one pharmacy
+
+An offline computer holds one pharmacy's records. The server marks its database for the first pharmacy it is
+connected to.
+
+- Setup and **Apply facility connection** refuse to connect a computer that holds another pharmacy's records, before
+  anything is changed.
+- If the settings are changed some other way, or the records of two pharmacies are already mixed, the server starts
+  **locked**: it refuses every `/api/` request and does not sync. Nothing is deleted. `/health` reports `dataLocked`
+  and the app says the computer is locked. Connect it back to its own pharmacy to open it again.
+- To give a computer to another pharmacy, let it finish syncing, then run this in PowerShell opened as
+  administrator, from the installed `scripts` folder:
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\prepare-for-another-pharmacy.ps1
+  ```
+
+  It moves the records, backups, logs and old settings into `C:\HealthFlowLocal\archive` (administrators only) and
+  clears the old pharmacy's settings. It refuses if records have not reached the cloud. Then clear the browser's
+  saved data for this server on every computer that used it, and run the setup with the new setup code. The archive
+  is the old pharmacy's data: agree with them what happens to it.
+
 ## Signed Branch Updates
 
 The hosted admin page can check and install updates on a connected localhost

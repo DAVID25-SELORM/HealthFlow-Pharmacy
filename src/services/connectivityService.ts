@@ -1,6 +1,11 @@
 // OFFLINE-FIRST PATCH START
 import { debugInfo } from '../utils/debugLog'
-import { getHostedBranchConfig, getWorkstationHeaders, isRegisteredForServer } from './branchBrowserAccess'
+import {
+  getHostedBranchConfig,
+  getWorkstationHeaders,
+  isOfflineServerLocked,
+  isRegisteredForServer,
+} from './branchBrowserAccess'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
@@ -43,7 +48,9 @@ const getConnectivityBranchServerConfig = () => {
   ).replace(/\/+$/, '')
 
   return {
-    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig,
+    enabled:
+      !isOfflineServerLocked() &&
+      (enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig),
     url,
     token,
     authorized: Boolean(token) || isRegisteredForServer(url),

@@ -148,7 +148,7 @@ const getStaffAuthorizationProfile = async (client, userId) => {
   }
 }
 
-const createBranchUserSession = (profile, activeRole, { offline = false } = {}) => {
+const assertStaffBelongsHere = (profile) => {
   if (!profile || profile.is_active === false) {
     throw new Error('This staff account is disabled or unavailable.')
   }
@@ -158,6 +158,10 @@ const createBranchUserSession = (profile, activeRole, { offline = false } = {}) 
   if (config.branchId && profile.branch_id && profile.branch_id !== config.branchId) {
     throw new Error('This staff account is not assigned to this branch.')
   }
+}
+
+const createBranchUserSession = (profile, activeRole, { offline = false } = {}) => {
+  assertStaffBelongsHere(profile)
 
   const primaryRole = String(profile.role || '').trim().toLowerCase()
   const cachedAssignedRoles = Array.isArray(profile.assignedRoles) ? profile.assignedRoles : []
@@ -232,6 +236,9 @@ export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
     missingProfile.status = 403
     throw missingProfile
   }
+  // Someone from another facility is refused before anything about them is saved on this computer. A staff member of
+  // this facility who has been disabled is still saved, so that the server stops their offline access.
+  if (profile.is_active !== false) assertStaffBelongsHere(profile)
   const permissionNames = [
     'can_refund', 'can_manage_inventory', 'can_view_reports', 'can_manage_claims',
     'can_manage_purchases', 'can_process_sales', 'can_manage_patients',

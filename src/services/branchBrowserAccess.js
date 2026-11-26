@@ -27,6 +27,9 @@ export const getHostedBranchConfig = () =>
 // The online website is never one, even when it has been connected to a branch server.
 export const isServedByOfflineServer = () => getHostedBranchConfig().enabled === true
 
+// The offline server says so when its records belong to another pharmacy. The app then leaves it alone.
+export const isOfflineServerLocked = () => getHostedBranchConfig().dataLocked === true
+
 export const getWorkstationHeaders = () => {
   if (typeof window === 'undefined') return {}
   try {

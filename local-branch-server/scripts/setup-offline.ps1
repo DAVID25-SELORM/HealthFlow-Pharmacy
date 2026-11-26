@@ -179,9 +179,10 @@ if (-not $haveBlock -and -not $alreadyInstalled) {
 
 if ($haveBlock) {
   # Same checks the real save runs, against a throwaway file: a bad code is caught before anything is installed.
-  $block | & $nodeExe $checkHelper --check
+  # It also asks whether an existing install on this computer holds another pharmacy's records.
+  $block | & $nodeExe $checkHelper --check --installed-root $InstallRoot
   if ($LASTEXITCODE -ne 0) {
-    Stop-WithMessage 'The setup code is not usable, so nothing was installed. Copy the whole block again from Branch Sync Setup and run this again.'
+    Stop-WithMessage 'Setup stopped and nothing was installed. The reason is above. If the setup code is the problem, copy the whole block again from Branch Sync Setup and run this again.'
   }
 }
 

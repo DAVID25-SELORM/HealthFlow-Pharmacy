@@ -2,11 +2,12 @@ import { assertNhisUnservedLocalDraft, requireNhisCloudServing } from '../../loc
 import { shouldPreferLocalApi } from './connectivityService'
 import { isNetworkRequestError } from '../utils/requestErrors'
 import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
-import { supabase } from '../lib/supabase'
+import { getCachedSupabaseUser, supabase } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
 import {
   getHostedBranchConfig,
   getWorkstationHeaders,
+  isOfflineServerLocked,
   isRegisteredForServer,
 } from './branchBrowserAccess'
 
@@ -80,7 +81,9 @@ export const getBranchServerConfig = () => {
   const registeredComputer = isRegisteredForServer(url)
 
   return {
-    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig,
+    enabled:
+      !isOfflineServerLocked() &&
+      (enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig),
     url,
     token,
     registeredComputer,
@@ -191,7 +194,13 @@ const requestBranchUserSession = async (session = null) => {
 
 const getVerifiedBranchUserSession = async () => {
   const savedSession = readBranchUserSession()
-  if (savedSession) return savedSession
+  if (savedSession) {
+    // A saved session is only for the person it was made for. If someone else is now signed in to HealthFlow Cloud
+    // in this browser, it must not be used for them, even when their role is the same.
+    const signedInUserId = getCachedSupabaseUser()?.id
+    if (!signedInUserId || savedSession.userId === signedInUserId) return savedSession
+    clearSavedBranchUserSession()
+  }
   const currentSession = await getCurrentSupabaseSession()
   return await requestBranchUserSession(currentSession)
 }

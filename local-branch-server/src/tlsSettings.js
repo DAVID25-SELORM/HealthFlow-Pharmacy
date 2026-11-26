@@ -5,11 +5,17 @@ import path from 'node:path'
 import tls from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { config } from './config.js'
+import { assertComputerCanConnect } from './connectGuard.js'
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url))
 const envPath = process.env.HEALTHFLOW_ENV_PATH
   ? path.resolve(process.env.HEALTHFLOW_ENV_PATH)
   : path.resolve(serverDir, '..', '.env')
+// Where an installed server keeps its records, beside the server folder. Not used when another settings file is
+// given (tests and the setup script's trial check).
+const installedDatabasePath = process.env.HEALTHFLOW_ENV_PATH
+  ? ''
+  : path.resolve(serverDir, '..', '..', 'data', 'healthflow-branch.sqlite')
 const HOSTNAME_PATTERN = /^(?=.{1,253}$)(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i
 const ENV_KEYS = {
   host: 'HOST',
@@ -175,6 +181,14 @@ export const saveCloudSyncSettings = (input = {}) => {
   if (supabaseSyncKey.length < 20) {
     throw Object.assign(new Error('Supabase publishable key is invalid.'), { status: 400 })
   }
+
+  // Refused before anything is written, if this computer holds another pharmacy's records. The installed path is
+  // checked too: the service is told where its database is, so this may run without that setting.
+  assertComputerCanConnect({
+    databasePaths: [config.sqlitePath, installedDatabasePath],
+    envPath,
+    organizationId,
+  })
 
   let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
   const values = {
